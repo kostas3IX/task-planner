@@ -1,114 +1,119 @@
 import streamlit as st
 import sqlite3
-import os
+import pandas as pd
 from reportlab.pdfgen import canvas
 
-# Σύνδεση με βάση δεδομένων SQLite
+# 📌 Σύνδεση με βάση δεδομένων SQLite
 conn = sqlite3.connect("tasks.db")
 cursor = conn.cursor()
 
-# Δημιουργία πίνακα αν δεν υπάρχει
+# 📌 Δημιουργία πίνακα αν δεν υπάρχει
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_name TEXT,
     month TEXT,
     date TEXT,
+    title TEXT,
     task TEXT,
     completed INTEGER
 )
 """)
 conn.commit()
 
-# Αποθήκευση νέας εργασίας
-def save_task(user_name, month, date, task):
-    cursor.execute("INSERT INTO tasks (user_name, month, date, task, completed) VALUES (?, ?, ?, ?, ?)",
-                   (user_name, month, date, task, 0))
-    conn.commit()
-
-# Ανάκτηση εργασιών
-def get_tasks(user_name, month):
-    cursor.execute("SELECT id, date, task, completed FROM tasks WHERE user_name = ? AND month = ?", (user_name, month))
+# 📌 Ανάκτηση εργασιών από τη βάση δεδομένων
+def get_tasks_from_db(month):
+    cursor.execute("SELECT id, date, title, task, completed FROM tasks WHERE user_name = ? AND month = ?", 
+                   (st.session_state.user_name, month))
     return cursor.fetchall()
 
-# Ενημέρωση ολοκλήρωσης
-def update_task_status(task_id, status):
-    cursor.execute("UPDATE tasks SET completed = ? WHERE id = ?", (status, task_id))
-    conn.commit()
+# 📌 Αρχικοποίηση της εφαρμογής
+if "user_name" not in st.session_state:
+    st.session_state.user_name = "Κώστας"  # Προσαρμόζεται δυναμικά αν θέλουμε
 
-# Ρύθμιση της εφαρμογής Streamlit
+# 📌 Ρύθμιση Streamlit UI
 st.set_page_config(
     page_title="Προγραμματισμός Ενεργειών",
     page_icon="📋",
     layout="wide"
 )
 
-# Εισαγωγή ονόματος χρήστη
-if "user_name" not in st.session_state:
-    with st.form("user_form"):
-        user_name = st.text_input("Παρακαλώ εισάγετε το όνομά σας:")
-        submitted = st.form_submit_button("Υποβολή")
-        if submitted and user_name:
-            st.session_state.user_name = user_name
-            st.rerun()
+# 📌 Κεφαλίδα
+st.markdown(f"## 👋 Γεια σου, {st.session_state.user_name}!")
+st.markdown("### 📋 Προγραμματισμός ενεργειών διευθυντή")
+st.write("**Παρακολούθηση Μηνιαίων Εργασιών**")
 
-# Αν δεν έχει καταχωρηθεί όνομα, σταματάμε εδώ
-if "user_name" not in st.session_state:
-    st.stop()
-
-st.title(f"📋 Προγραμματισμός Ενεργειών - {st.session_state.user_name}")
-st.subheader("Παρακολούθηση Μηνιαίων Εργασιών")
-
-# Επιλογή μήνα
+# 📌 Επιλογή μήνα
 months = ["Ιανουάριος", "Φεβρουάριος", "Μάρτιος", "Απρίλιος", "Μάιος", "Ιούνιος",
           "Ιούλιος", "Αύγουστος", "Σεπτέμβριος", "Οκτώβριος", "Νοέμβριος", "Δεκέμβριος"]
-selected_month = st.selectbox("Επιλέξτε Μήνα:", months)
+selected_month = st.selectbox("📅 Επιλέξτε Μήνα:", months)
 
-# Εμφάνιση εργασιών
-tasks = get_tasks(st.session_state.user_name, selected_month)
+# 📌 Ανάκτηση εργασιών από τη βάση
+tasks = get_tasks_from_db(selected_month)
 
-for task_id, date, task, completed in tasks:
+# 📌 Εμφάνιση εργασιών με τίτλο & περιγραφή
+st.markdown("### 📌 Λίστα εργασιών")
+for task_id, date, title, task, completed in tasks:
     task_key = f"{selected_month}_{task_id}"
-    if st.checkbox(f"**{date}** {task}" if date else task, key=task_key, value=completed):
-        update_task_status(task_id, 1)
-    else:
-        update_task_status(task_id, 0)
+    col1, col2 = st.columns([1, 4])
 
-# Υπολογισμός ποσοστού προόδου
-total_tasks = len(tasks)
-completed_tasks = sum(1 for task in tasks if task[3] == 1)  # Αν completed == 1, σημαίνει ότι είναι ολοκληρωμένο
-progress = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
-st.progress(progress / 100)
-st.write(f"Πρόοδος: {progress:.1f}%")
+    with col1:
+        if st.checkbox("", key=task_key, value=completed):
+            cursor.execute("UPDATE tasks SET completed = 1 WHERE id = ?", (task_id,))
+        else:
+            cursor.execute("UPDATE tasks SET completed = 0 WHERE id = ?", (task_id,))
+        conn.commit()
 
-# Φόρμα προσθήκης εργασίας
-with st.form("task_form"):
-    task_date = st.text_input("Ημερομηνία (προαιρετικό):")
-    task_text = st.text_area("Περιγραφή εργασίας:")
-    submitted = st.form_submit_button("Προσθήκη")
-    if submitted and task_text:
-        save_task(st.session_state.user_name, selected_month, task_date, task_text)
-        st.rerun()
+    with col2:
+        tag_color = "🟢" if completed else "🔴"
+        st.markdown(f"**{date} | {title}** {tag_color}")
+        st.write(task)
 
-# Δημιουργία PDF και Άνοιγμα παραθύρου εκτύπωσης
-def save_pdf(user_name, tasks, filename="tasks.pdf"):
-    c = canvas.Canvas(filename)
-    c.setFont("Helvetica", 14)
+# 📌 Προσθήκη νέας εργασίας με δυναμικό κλείσιμο πεδίων
+with st.form("new_task_form", clear_on_submit=True):
+    new_task_title = st.text_input("📌 Τίτλος Εργασίας:")
+    new_task_date = st.text_input("📅 Ημερομηνία (προαιρετικό):")
+    new_task_text = st.text_area("📝 Περιγραφή Εργασίας:")
+    submitted = st.form_submit_button("✅ Προσθήκη Εργασίας")
+
+    if submitted and new_task_text:
+        cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed) VALUES (?, ?, ?, ?, ?, ?)",
+                       (st.session_state.user_name, selected_month, new_task_date, new_task_title, new_task_text, 0))
+        conn.commit()
+        st.rerun()  # 🔄 Ανανεώνει την εφαρμογή και κλείνει τα πεδία
+
+# 📌 Εκτύπωση σε PDF
+def save_pdf(user_name, tasks):
+    pdf_filename = f"{user_name}_tasks.pdf"
+    c = canvas.Canvas(pdf_filename)
+    
     c.drawString(100, 800, f"Εργασίες για {user_name}")
 
-    y_position = 780
-    for date, task, completed in tasks:
-        status = "✓" if completed else "✗"
-        c.drawString(100, y_position, f"{date} - {task} ({status})")
-        y_position -= 20
-
+    y = 780
+    for task in tasks:
+        date = task[1]
+        title = task[2]
+        text = task[3]
+        completed = "✓" if task[4] else "✗"
+        c.drawString(100, y, f"{date}: {title} - {text} ({completed})")
+        y -= 20
+    
     c.save()
+    return pdf_filename
 
-# Κουμπί εκτύπωσης
-if st.button("🖨️ Εκτύπωση"):
-    save_pdf(st.session_state.user_name, tasks)  # Δημιουργία PDF
-    os.startfile("tasks.pdf", "print")  # Άνοιγμα παραθύρου εκτύπωσης στα Windows
+if st.button("🖨️ Εκτύπωση PDF"):
+    pdf_file = save_pdf(st.session_state.user_name, tasks)
+    with open(pdf_file, "rb") as f:
+        st.download_button("📄 Λήψη PDF", f, pdf_file, "application/pdf")
 
-# Υποσημείωση
+# 📌 Εκτύπωση σε CSV
+if st.button("📄 Εκτύπωση σε CSV"):
+    df = pd.DataFrame([
+        {"Ημερομηνία": task[1], "Τίτλος": task[2], "Εργασία": task[3], "Κατάσταση": "✓" if task[4] else "✗"}
+        for task in tasks
+    ])
+    st.download_button("📄 Λήψη ως CSV", df.to_csv(index=False).encode('utf-8-sig'),
+                       f"εργασίες_{selected_month}.csv", "text/csv", key='download-csv')
+
 st.markdown("---")
-st.markdown("*Σύστημα Παρακολούθησης Εργασιών*")
+st.markdown("*Σύστημα Παρακολούθησης Εργασιών Διευθυντή*")
