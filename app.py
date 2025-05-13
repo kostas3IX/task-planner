@@ -1,6 +1,5 @@
 import streamlit as st
 import sqlite3
-import pandas as pd
 from reportlab.pdfgen import canvas
 
 # 📌 Σύνδεση με βάση δεδομένων SQLite
@@ -27,6 +26,19 @@ def get_tasks_from_db(month):
                    (st.session_state.user_name, month))
     return cursor.fetchall()
 
+# 📌 Υπολογισμός ποσοστού ολοκλήρωσης ανά μήνα
+def get_completion_percentage(month):
+    tasks = get_tasks_from_db(month)
+    total_tasks = len(tasks)
+    completed_tasks = sum(1 for task in tasks if task[4])
+    return (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+# 📌 Μετατροπή ονόματος σε κλητική πτώση
+def to_vocative(name):
+    if name.endswith("ς"):
+        return name[:-1]
+    return name
+
 # 📌 Αρχικοποίηση της εφαρμογής
 if "user_name" not in st.session_state:
     st.session_state.user_name = "Κώστας"  # Προσαρμόζεται δυναμικά αν θέλουμε
@@ -38,18 +50,30 @@ st.set_page_config(
     layout="wide"
 )
 
-# 📌 Κεφαλίδα
-st.markdown(f"## 👋 Γεια σου, {st.session_state.user_name}!")
+# 📌 Κεφαλίδα με όνομα στην κλητική
+vocative_name = to_vocative(st.session_state.user_name)
+st.markdown(f"## 👋 Γεια σου, {vocative_name}!")
 st.markdown("### 📋 Προγραμματισμός ενεργειών διευθυντή")
 st.write("**Παρακολούθηση Μηνιαίων Εργασιών**")
 
-# 📌 Επιλογή μήνα
+# 📌 Επιλογή μήνα με ποσοστά ολοκλήρωσης
 months = ["Ιανουάριος", "Φεβρουάριος", "Μάρτιος", "Απρίλιος", "Μάιος", "Ιούνιος",
           "Ιούλιος", "Αύγουστος", "Σεπτέμβριος", "Οκτώβριος", "Νοέμβριος", "Δεκέμβριος"]
-selected_month = st.selectbox("📅 Επιλέξτε Μήνα:", months)
+month_options = [f"{month} ({get_completion_percentage(month):.1f}%)" for month in months]
+selected_month_with_percentage = st.selectbox("📅 Επιλέξτε Μήνα:", month_options)
+selected_month = selected_month_with_percentage.split(" (")[0]  # Εξαγωγή του ονόματος του μήνα
 
 # 📌 Ανάκτηση εργασιών από τη βάση
 tasks = get_tasks_from_db(selected_month)
+
+# 📌 Υπολογισμός ποσοστού ολοκλήρωσης για τον επιλεγμένο μήνα
+total_tasks = len(tasks)
+completed_tasks = sum(1 for task in tasks if task[4])
+completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+# 📌 Εμφάνιση μπάρας προόδου για τον επιλεγμένο μήνα
+st.markdown(f"### 📊 Ποσοστό Ολοκλήρωσης για {selected_month}: {completion_percentage:.1f}%")
+st.progress(completion_percentage / 100)
 
 # 📌 Εμφάνιση εργασιών με τίτλο & περιγραφή
 st.markdown("### 📌 Λίστα εργασιών")
@@ -58,7 +82,7 @@ for task_id, date, title, task, completed in tasks:
     col1, col2 = st.columns([1, 4])
 
     with col1:
-        if st.checkbox("", key=task_key, value=completed):
+        if st.checkbox("", key=task_key, value=bool(completed)):
             cursor.execute("UPDATE tasks SET completed = 1 WHERE id = ?", (task_id,))
         else:
             cursor.execute("UPDATE tasks SET completed = 0 WHERE id = ?", (task_id,))
@@ -87,8 +111,7 @@ def save_pdf(user_name, tasks):
     pdf_filename = f"{user_name}_tasks.pdf"
     c = canvas.Canvas(pdf_filename)
     
-    c.drawString(100, 800, f"Εργασίες για {user_name}")
-
+    c.drawString(100, 800, f"Εργασίες για {to_vocative(user_name)}")
     y = 780
     for task in tasks:
         date = task[1]
@@ -105,15 +128,6 @@ if st.button("🖨️ Εκτύπωση PDF"):
     pdf_file = save_pdf(st.session_state.user_name, tasks)
     with open(pdf_file, "rb") as f:
         st.download_button("📄 Λήψη PDF", f, pdf_file, "application/pdf")
-
-# 📌 Εκτύπωση σε CSV
-if st.button("📄 Εκτύπωση σε CSV"):
-    df = pd.DataFrame([
-        {"Ημερομηνία": task[1], "Τίτλος": task[2], "Εργασία": task[3], "Κατάσταση": "✓" if task[4] else "✗"}
-        for task in tasks
-    ])
-    st.download_button("📄 Λήψη ως CSV", df.to_csv(index=False).encode('utf-8-sig'),
-                       f"εργασίες_{selected_month}.csv", "text/csv", key='download-csv')
 
 st.markdown("---")
 st.markdown("*Σύστημα Παρακολούθησης Εργασιών Διευθυντή*")
