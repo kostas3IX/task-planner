@@ -2,6 +2,13 @@ import streamlit as st
 import sqlite3
 from reportlab.pdfgen import canvas  # Make sure reportlab is installed (`pip install reportlab`)
 
+# 📌 Ρύθμιση Streamlit UI (πρώτη εντολή Streamlit)
+st.set_page_config(
+    page_title="Προγραμματισμός Ενεργειών",
+    page_icon="📋",
+    layout="wide"
+)
+
 # 📌 Custom CSS για μοντέρνο και λιτό UI
 st.markdown("""
 <style>
@@ -73,13 +80,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# 📌 Ρύθμιση Streamlit UI
-st.set_page_config(
-    page_title="Προγραμματισμός Ενεργειών",
-    page_icon="📋",
-    layout="wide"
-)
 
 # 📌 Σύνδεση με βάση δεδομένων SQLite
 conn = sqlite3.connect("tasks.db", check_same_thread=False)
