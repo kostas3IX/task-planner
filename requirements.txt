@@ -2,3 +2,5 @@ streamlit
 pysqlite3
 reportlab
 icalendar
+streamlit>=1.0.0
+sqlite3
