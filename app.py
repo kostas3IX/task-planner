@@ -152,22 +152,22 @@ predefined_tasks = {
 
 # 📌 Συνάρτηση για την προσθήκη προκαθορισμένων εργασιών
 def add_predefined_tasks(user_name):
+    # Check if any tasks exist for this user in any month
     cursor.execute("SELECT COUNT(*) FROM tasks WHERE user_name = ?", (user_name,))
     count = cursor.fetchone()[0]
 
-    # Προσθέτουμε τις προκαθορισμένες εργασίες μόνο αν δεν υπάρχουν ήδη εργασίες
-    # για αυτόν τον χρήστη. Αυτός ο έλεγχος είναι απλοϊκός και μπορεί να χρειαστεί
-    # βελτίωση αν θέλουμε να προσθέτουμε εργασίες ανά μήνα ή να ενημερώνουμε υπάρχουσες.
+    # Add predefined tasks only if no tasks exist for this user at all.
+    # This is a simple check to populate the database on first run per user.
     if count == 0:
         st.info("Adding predefined tasks...") # Ενημέρωση χρήστη
         for month, tasks in predefined_tasks.items():
             for date, task_desc in tasks:
-                # Για την απλοποίηση, χρησιμοποιούμε την περιγραφή ως τίτλο
+                # For simplicity, using the description as title
                 title = task_desc
                 cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed) VALUES (?, ?, ?, ?, ?, ?)",
                                (user_name, month, date, title, task_desc, 0))
         conn.commit()
-        st.success("Predefined tasks added!") # Επιβεβαίωση
+        # st.success("Predefined tasks added!") # Επιβεβαίωση - μπορεί να γίνει ενοχλητικό σε κάθε rerun
 
 # 📌 Ανάκτηση εργασιών από τη βάση δεδομένων
 def get_tasks_from_db(user_name, month):
@@ -175,12 +175,15 @@ def get_tasks_from_db(user_name, month):
                    (user_name, month)) # Added ORDER BY date for better readability
     return cursor.fetchall()
 
-# 📌 Αρχικοποίηση της εφαρμογής
+# 📌 Αρχικοποίηση της εφαρμογής και session state
 if "user_name" not in st.session_state:
     st.session_state.user_name = "Κώστας"  # Προσαρμόζεται δυναμικά αν θέλουμε
     # Προσθήκη προκαθορισμένων εργασιών για τον αρχικό χρήστη
     add_predefined_tasks(st.session_state.user_name)
 
+# Initialize state for showing the new task form
+if 'show_new_task_form' not in st.session_state:
+    st.session_state.show_new_task_form = False
 
 # 📌 Ρύθμιση Streamlit UI
 st.set_page_config(
@@ -201,41 +204,43 @@ selected_month = st.selectbox("📅 Επιλέξτε Μήνα:", months)
 # 📌 Ανάκτηση εργασιών από τη βάση για τον επιλεγμένο μήνα και χρήστη
 tasks = get_tasks_from_db(st.session_state.user_name, selected_month)
 
-# 📌 Εμφάνιση εργασιών με τίτλο & περιγραφή
-st.markdown("### 📌 Λίστα εργασιών")
+# 📌 Υπολογισμός προόδου για τον τρέχοντα μήνα
+total_tasks = len(tasks)
+completed_tasks = sum(1 for task in tasks if task[4] == 1)
+progress_percentage = (completed_tasks / total_tasks) * 100 if total_tasks > 0 else 0
+
+# 📌 Εμφάνιση γραμμής προόδου
+st.markdown(f"### 📊 Πρόοδος {selected_month}")
+st.progress(progress_percentage / 100.0, text=f"{completed_tasks} / {total_tasks} εργασίες ολοκληρώθηκαν ({progress_percentage:.0f}%)")
+
+
+# 📌 Εμφάνιση εργασιών με checkbox & περιγραφή
+st.markdown(f"### 📌 Λίστα εργασιών {selected_month}")
 if not tasks:
     st.info(f"Δεν υπάρχουν καταχωρημένες εργασίες για τον μήνα {selected_month}.")
 else:
     for task_id, date, title, task, completed in tasks:
         task_key = f"task_{task_id}_{selected_month}" # Unique key for checkbox
 
-        # Use columns for checkbox and task details
-        col1, col2, col3 = st.columns([0.5, 6, 0.5]) # Added a column for delete button
+        # Use columns for checkbox, task details, and delete button
+        # Adjusted column widths for better layout
+        col1, col2, col3 = st.columns([0.5, 6, 0.5])
 
         with col1:
-             # The checkbox value needs to reflect the current state from the DB
+            # The checkbox value needs to reflect the current state from the DB
             is_completed = completed == 1
-            if st.checkbox("", key=task_key, value=is_completed):
-                if not is_completed: # Update only if state changed
-                     cursor.execute("UPDATE tasks SET completed = 1 WHERE id = ?", (task_id,))
-                     conn.commit()
-                     st.rerun() # Rerun to update the display
-            else:
-                if is_completed: # Update only if state changed
-                    cursor.execute("UPDATE tasks SET completed = 0 WHERE id = ?", (task_id,))
-                    conn.commit()
-                    st.rerun() # Rerun to update the display
+            # Use on_change to trigger DB update and rerun immediately
+            st.checkbox("", key=task_key, value=is_completed, on_change=lambda tid=task_id, current_state=is_completed: cursor.execute("UPDATE tasks SET completed = ?", (0 if current_state else 1, tid)) or conn.commit() or st.rerun())
 
 
         with col2:
             tag_color = "🟢" if completed else "🔴"
-            # Display date, title (which is the description here), and tag
-            display_title = f"**{date if date else 'Χωρίς Ημ.'} | {title}**"
+            # Display date, title, and tag
+            display_date = date if date else "Χωρίς Ημ."
+            display_title = f"**{display_date} | {title}**"
             st.markdown(f"{display_title} {tag_color}")
-            # Display the full task description below the title if it's different
-            # In this case, title and task are the same based on insertion logic,
-            # but keeping task display separate for potential future distinction.
-            if title != task: # Only show task if it's different from title
+            # Display the full task description below the title if it's different or if title is derived
+            if title != task or (not new_task_title and len(new_task_text) > 50): # Show full task if title is a summary
                  st.write(task)
 
 
@@ -247,30 +252,47 @@ else:
                 st.rerun() # Rerun to update the task list
 
 
-# 📌 Προσθήκη νέας εργασίας με δυναμικό κλείσιμο πεδίων
-st.markdown("### ✨ Προσθήκη Νέας Εργασίας")
-with st.form("new_task_form", clear_on_submit=True):
-    # Set default date to selected month (optional, can be empty)
-    default_date_prefix = "" # f"{selected_month[:3]} " # e.g., "Σεπ "
-    new_task_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9) - Προαιρετικό:", value=default_date_prefix)
-    new_task_title = st.text_input("📌 Τίτλος Εργασίας (Χρησιμοποιείται στην περίληψη της λίστας):")
-    new_task_text = st.text_area("📝 Περιγραφή Εργασίας (Πλήρες κείμενο):")
-    submitted = st.form_submit_button("✅ Προσθήκη Εργασίας")
+# 📌 Κουμπί για εμφάνιση της φόρμας προσθήκης νέας εργασίας
+if st.button("✨ Προσθήκη Νέας Εργασίας"):
+    st.session_state.show_new_task_form = True
 
-    if submitted and new_task_text:
-        # Use the task text as title if title is empty
-        title_to_insert = new_task_title if new_task_title else new_task_text[:50] + "..." if len(new_task_text) > 50 else new_task_text
-        cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed) VALUES (?, ?, ?, ?, ?, ?)",
-                       (st.session_state.user_name, selected_month, new_task_date, title_to_insert, new_task_text, 0))
-        conn.commit()
-        st.rerun()  # 🔄 Ανανεώνει την εφαρμογή και κλείνει τα πεδία
+# 📌 Φόρμα προσθήκης νέας εργασίας (εμφανίζεται μόνο αν show_new_task_form είναι True)
+if st.session_state.show_new_task_form:
+    st.markdown("### 📝 Στοιχεία Νέας Εργασίας")
+    with st.form("new_task_form", clear_on_submit=False): # Keep fields filled until explicitly cleared
+        # Set default date to selected month (optional, can be empty)
+        default_date_prefix = "" # f"{selected_month[:3]} " # e.g., "Σεπ "
+        new_task_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9) - Προαιρετικό:", value=default_date_prefix, key='new_task_date_input')
+        new_task_title = st.text_input("📌 Τίτλος Εργασίας (Χρησιμοποιείται στην περίληψη της λίστας):", key='new_task_title_input')
+        new_task_text = st.text_area("📝 Περιγραφή Εργασίας (Πλήρες κείμενο):", key='new_task_text_area')
+        submitted = st.form_submit_button("✅ Αποθήκευση Εργασίας")
+        cancel_button = st.form_submit_button("❌ Ακύρωση")
+
+        if submitted and new_task_text:
+            # Use the task text as title if title is empty or short summary
+            title_to_insert = new_task_title if new_task_title else (new_task_text[:50] + "...") if len(new_task_text) > 50 else new_task_text
+            cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed) VALUES (?, ?, ?, ?, ?, ?)",
+                           (st.session_state.user_name, selected_month, new_task_date, title_to_insert, new_task_text, 0))
+            conn.commit()
+            st.success("Η εργασία προστέθηκε επιτυχώς!")
+            # Reset form fields and hide the form
+            st.session_state.show_new_task_form = False
+            st.session_state.new_task_date_input = ""
+            st.session_state.new_task_title_input = ""
+            st.session_state.new_task_text_area = ""
+            st.rerun() # 🔄 Ανανεώνει την εφαρμογή
+
+        if cancel_button:
+             # Hide the form and clear fields without saving
+            st.session_state.show_new_task_form = False
+            st.session_state.new_task_date_input = ""
+            st.session_state.new_task_title_input = ""
+            st.session_state.new_task_text_area = ""
+            st.rerun()
+
 
 # 📌 Εκτύπωση σε PDF (Ενημερωμένη για να τραβάει όλες τις εργασίες του χρήστη)
 def save_pdf(user_name):
-    cursor.execute("SELECT date, title, task, completed FROM tasks WHERE user_name = ? ORDER BY month, date", (user_name,))
-    all_user_tasks = cursor.fetchall()
-
-    pdf_filename = f"{user_name}_all_tasks.pdf"
     # Use a font that supports Greek characters (requires reportlab configuration or a custom font)
     # For simplicity, let's use a basic font that *might* support some Greek depending on the environment,
     # or require installing a specific font like FreeSans and registering it with reportlab.
@@ -282,22 +304,14 @@ def save_pdf(user_name):
     # pdfmetrics.registerFont(TTFont('FreeSans', 'FreeSans.ttf')) # Need to download FreeSans.ttf or similar
     # c = canvas.Canvas(pdf_filename, fontName="FreeSans", fontSize=10)
 
+    pdf_filename = f"{user_name}_all_tasks.pdf"
     c = canvas.Canvas(pdf_filename) # Basic canvas, might not render Greek correctly
 
     c.setFont("Helvetica", 12)
     c.drawString(100, 800, f"Προγραμματισμός Ενεργειών για {user_name}")
     c.setFont("Helvetica", 10)
 
-    y = 780
-    current_month = None
-    for task in all_user_tasks:
-        date_str = task[0] if task[0] else "Χωρίς Ημ."
-        title = task[1]
-        text = task[2]
-        completed_status = "✓" if task[3] else "✗"
-
-        # Add month header if it changes (Requires fetching month along with tasks)
-        # Let's refetch with month for better PDF structure
+    # Fetch tasks ordered by month and date
     cursor.execute("SELECT month, date, title, task, completed FROM tasks WHERE user_name = ? ORDER BY CASE month WHEN 'Σεπτέμβριος' THEN 1 WHEN 'Οκτώβριος' THEN 2 WHEN 'Νοέμβριος' THEN 3 WHEN 'Δεκέμβριος' THEN 4 WHEN 'Ιανουάριος' THEN 5 WHEN 'Φεβρουάριος' THEN 6 WHEN 'Μάρτιος' THEN 7 WHEN 'Απρίλιος' THEN 8 WHEN 'Μάιος' THEN 9 WHEN 'Ιούνιος' THEN 10 WHEN 'Ιούλιος' THEN 11 WHEN 'Αύγουστος' THEN 12 END, date", (user_name,))
     all_user_tasks_ordered = cursor.fetchall()
 
@@ -319,6 +333,7 @@ def save_pdf(user_name):
         completed_status_pdf = "✓" if completed_pdf else "✗"
 
         # Format the task string
+        # Use the title for the main line in PDF
         task_line = f"{date_str_pdf}: {title_pdf} ({completed_status_pdf})"
 
         # Handle text wrapping for long descriptions if needed (basic implementation)
@@ -326,13 +341,15 @@ def save_pdf(user_name):
         max_width = 450 # Max width in points
         lines = []
         current_line = ""
+        # Split by space and try to fit words
         words = task_line.split(' ')
         for word in words:
-            if c.stringWidth(current_line + " " + word) < max_width:
-                current_line += " " + word if current_line else word
+            # Check if adding the next word exceeds max_width
+            if current_line and c.stringWidth(current_line + " " + word) > max_width:
+                 lines.append(current_line)
+                 current_line = word
             else:
-                lines.append(current_line)
-                current_line = word
+                 current_line = (current_line + " " + word).strip()
         if current_line:
             lines.append(current_line)
 
