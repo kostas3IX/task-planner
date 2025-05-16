@@ -1,9 +1,80 @@
 import streamlit as st
 import sqlite3
-import pandas as pd
-from reportlab.pdfgen import canvas # Make sure reportlab is installed (`pip install reportlab`)
+from reportlab.pdfgen import canvas  # Make sure reportlab is installed (`pip install reportlab`)
 
-# 📌 Ρύθμιση Streamlit UI (πρώτη εντολή Streamlit)
+# 📌 Custom CSS για μοντέρνο και λιτό UI
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #f5f7fa;
+        font-family: 'Arial', sans-serif;
+    }
+    .title {
+        color: #2c3e50;
+        font-size: 2.5em;
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 0.5em;
+    }
+    .subtitle {
+        color: #34495e;
+        font-size: 1.2em;
+        text-align: center;
+        margin-bottom: 2em;
+    }
+    .month-select {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        max-width: 300px;
+        margin: 0 auto;
+    }
+    .task-container {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 10px 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+    }
+    .task-container:hover {
+        transform: translateY(-2px);
+    }
+    .task-title {
+        color: #2c3e50;
+        font-weight: 600;
+        font-size: 1.1em;
+    }
+    .task-date {
+        color: #7f8c8d;
+        font-size: 0.9em;
+    }
+    .task-status {
+        font-size: 1.2em;
+    }
+    .progress-container {
+        margin: 20px 0;
+        text-align: center;
+    }
+    .stProgress > div > div {
+        background-color: #3498db;
+    }
+    .stButton > button {
+        background-color: #3498db;
+        color: white;
+        border-radius: 8px;
+        padding: 10px 20px;
+        border: none;
+        transition: background-color 0.2s;
+    }
+    .stButton > button:hover {
+        background-color: #2980b9;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# 📌 Ρύθμιση Streamlit UI
 st.set_page_config(
     page_title="Προγραμματισμός Ενεργειών",
     page_icon="📋",
@@ -11,15 +82,12 @@ st.set_page_config(
 )
 
 # 📌 Σύνδεση με βάση δεδομένων SQLite
-conn = sqlite3.connect("tasks.db")
+conn = sqlite3.connect("tasks.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# 📌 Διαγραφή υπάρχοντος πίνακα για να εξασφαλιστεί σωστό σχήμα (ΠΡΟΣΟΧΗ: Διαγράφει όλα τα δεδομένα!)
-cursor.execute("DROP TABLE IF EXISTS tasks")
-
-# 📌 Δημιουργία πίνακα
+# 📌 Δημιουργία πίνακα (χωρίς διαγραφή υπάρχοντος για να αποφευχθεί απώλεια δεδομένων)
 cursor.execute("""
-CREATE TABLE tasks (
+CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_name TEXT,
     month TEXT,
@@ -37,29 +105,29 @@ predefined_tasks = {
         ("1/9", "Πράξη ανάληψης υπηρεσίας"),
         ("1-5/9", "Προγραμματισμός αγιασμού - ενημέρωση γονέων - ανάρτηση στην ιστοσελίδα"),
         ("έως 10/9", "Πρακτικό: Ανάθεση τμημάτων - διδασκαλιών - ολοήμερου - ΠΖ"),
-        ("έως 10/9", "Πρακτικό: Διαμόρφωση ομίλων στο αναβαθμισμένο πρόγραμμα ολοημέρου (προτάσεις από τα άτομα που θα διδάσκουν)"),
+        ("έως 10/9", "Πρακτικό: Διαμόρφωση ομίλων στο αναβαθμισμένο πρόγραμμα ολοημέρου"),
         ("έως 10/9", "Πρακτικό: Εξωδιδακτικές αρμοδιότητες"),
         ("έως 10/9", "Πρακτικό: Ανάθεση σχολικών εορτών, επετείων, ομιλιών"),
         ("έως 10/9", "Πρακτικό: Εφημερίες - ασφάλεια μαθητών"),
         ("έως 10/9", "Πρακτικό: Αναπλήρωση απόντων εκπαιδευτικών"),
         ("έως 10/9", "Πρακτικό: Επιλογή βιβλίων Β’ ξένης γλώσσας"),
-        ("έως 10/9", "Εσωτερικός κανονισμός λειτουργίας - επικαιροποίηση - ανάρτηση στην ιστοσελίδα του σχολείου"),
+        ("έως 10/9", "Εσωτερικός κανονισμός λειτουργίας - επικαιροποίηση"),
         ("έως 10/9", "Σχολικό Συμβούλιο; Κοινή συνεδρίαση συστεγαζόμενων"),
-        ("έως 10/9", "Οργάνωση του Myschool (Αναλήψεις υπηρεσίας, έλεγχος-εγγραφή μαθητών Α, τμήματα, Ολοήμερο, Πρωινή Ζώνη, αναθέσεις μαθημάτων, μαθητές με ειδικές εκπαιδευτικές ανάγκες)"),
+        ("έως 10/9", "Οργάνωση του Myschool"),
         ("11/9", "Ωρολόγιο πρόγραμμα - (έστω προσωρινό)"),
         ("11/9", "Ωρολόγιο πρόγραμμα εξ αποστάσεως"),
         ("11/9", "Αγιασμός. Καλωσόρισμα - υποδοχή γονέων Α’ τάξης"),
-        ("12/9", "Αποστολή δηλώσεων στους γονείς των παιδιών που επέλεξαν τη συμμετοχή στο αναβαθμισμένο ολοήμερο για την επιλογή των ομίλων."),
+        ("12/9", "Αποστολή δηλώσεων στους γονείς για το αναβαθμισμένο ολοήμερο"),
         ("15/9", "Επιβεβαίωση Δεδομένων Myschool"),
         ("έως 20", "Ορισμός συντονιστών"),
         ("έως 20", "Ορισμός μέντορα"),
         ("έως 20", "Προαιρετική Συγκρότηση Εκπαιδευτικών Ομίλων"),
-        ("έως 20/9", "Προγραμματισμός συναντήσεων με γονείς (οι συναντήσεις μπορούν να γίνουν 26-30/9)"),
-        ("έως 30/9", "Ειδική συνεδρίαση του Συλλόγου Διδασκόντων για τον καθορισμό του ετήσιου Σχεδίου Δράσης της σχολικής μονάδας αναφορικά με τα Εργαστήρια Δεξιοτήτων"),
-        ("έως 30/9", "Προγραμματισμός 15ωρων ενδοσχολικών (είναι αρμοδιότητα του Διευθυντή αλλά είναι χρήσιμο - και δεσμευτικό - να ερωτάται ο Σύλλογος Διδασκόντων)"),
-        ("έως 30/9", "Έλεγχος μαθητικών λογαριασμών των μαθητών της Α τάξης και των εκ μετεγγραφής στο sch.gr"),
-        ("έως 30/9", "Προγραμματισμός Α’ τριμήνου (επισκέψεις, εκδρομές, ημέρες και ώρες που οι εκπαιδευτικοί δέχονται γονείς)"),
-        ("έως 30/9", "Διαδικασία ανάθεσης και έγκρισης για τη συμπλήρωση του υποχρεωτικού διδακτικού ωραρίου (προτεραιότητα ενισχυτική διδασκαλία, γραμματειακή υποστήριξη) (Ν. 4386/2016, άρθρο 33, παρ. 5, όπως τροποποιήθηκε και ισχύει)"),
+        ("έως 20/9", "Προγραμματισμός συναντήσεων με γονείς"),
+        ("έως 30/9", "Ειδική συνεδρίαση για το ετήσιο Σχέδιο Δράσης"),
+        ("έως 30/9", "Προγραμματισμός 15ωρων ενδοσχολικών"),
+        ("έως 30/9", "Έλεγχος μαθητικών λογαριασμών στο sch.gr"),
+        ("έως 30/9", "Προγραμματισμός Α’ τριμήνου"),
+        ("έως 30/9", "Διαδικασία ανάθεσης για συμπλήρωση διδακτικού ωραρίου"),
         ("30/9-3/10", "Ανάρτηση παρουσιολογίων ΕΣΠΑ"),
     ],
     "Οκτώβριος": [
@@ -67,10 +135,10 @@ predefined_tasks = {
         (None, "1η παιδαγωγική συνεδρίαση"),
         ("4/10", "Παγκόσμια ημέρα των ζώων"),
         ("5/10", "Παγκόσμια Ημέρα Εκπαιδευτικών"),
-        ("έως 10/10", "Μνημόνιο ενεργειών εκτάκτων αναγκών - Ενημέρωση γονέων στην ιστοσελίδα."),
-        ("έως 10/10", "Συνεδρίαση για τον Συλλογικό Προγραμματισμό όπου προτείνονται Σχέδια Δράσης, συγκροτούνται Ομάδες Δράσης"),
+        ("έως 10/10", "Μνημόνιο ενεργειών εκτάκτων αναγκών"),
+        ("έως 10/10", "Συνεδρίαση για τον Συλλογικό Προγραμματισμό"),
         ("15/10", "Επιβεβαίωση Δεδομένων Myschool"),
-        ("έως 20/10", "Καταχώρηση τίτλων & σχεδίων δράσης στην πλατφόρμα"),
+        ("έως 20/10", "Καταχώρηση τίτλων & σχεδίων δράσης"),
         ("έως 21/10", "Επιλογή σημαιοφόρων"),
         ("31/10-3/11", "Ανάρτηση παρουσιολογίων ΕΣΠΑ"),
     ],
@@ -85,8 +153,8 @@ predefined_tasks = {
     "Δεκέμβριος": [
         ("1/12", "Επιβεβαίωση Δεδομένων Myschool"),
         ("3/12", "Παγκόσμια Ημέρα Ατόμων με Αναπηρία"),
-        ("έως 10/12", "Καταχώρηση του Σχεδιασμού Δράσης από τους ΣΥΝΤΟΝΙΣΤΕΣ ΟΜΑΔΩΝ ΔΡΑΣΗΣ"),
-        (None, "3η παιδαγωγική συνεδρίαση - Προγραμματισμός Β’ τριμήνου (επισκέψεις, εκδρομές)"),
+        ("έως 10/12", "Καταχώρηση του Σχεδιασμού Δράσης"),
+        (None, "3η παιδαγωγική συνεδρίαση"),
         ("10/12", "Λήξη Α’ τριμήνου"),
         (None, "Επίδοση ελέγχων"),
         ("15/12", "Επιβεβαίωση Δεδομένων Myschool"),
@@ -111,8 +179,8 @@ predefined_tasks = {
         ("1/3", "Επιβεβαίωση Δεδομένων Myschool"),
         ("έως 10/3", "Σχολικό Συμβούλιο"),
         ("1-20/3", "Εγγραφές-Αποστολή στοιχείων στη ΔΙΠΕ"),
-        ("6/3", "Πανελλήνια Ημέρα κατά της σχολικής βίας και του εκφοβισμού"),
-        (None, "6η παιδαγωγική συνεδρίαση - Προγραμματισμός Γ’ τριμήνου (επισκέψεις, εκδρομές)"),
+        ("6/3", "Πανελλήνια Ημέρα κατά της σχολικής βίας"),
+        (None, "6η παιδαγωγική συνεδρίαση"),
         ("10/3", "Λήξη Β΄ τριμήνου"),
         (None, "Επίδοση ελέγχων"),
         ("15/3", "Επιβεβαίωση Δεδομένων Myschool"),
@@ -134,22 +202,22 @@ predefined_tasks = {
         (None, "8η παιδαγωγική συνεδρίαση"),
         ("9/5", "Ημέρα της Ευρώπης"),
         ("15/5", "Επιβεβαίωση Δεδομένων Myschool"),
-        ("19/5", "Ημέρα Μνήμης για τη Γενοκτονία των Ελλήνων στο Μικρασιατικό Πόντο"),
-        (None, "Λήξη ενεργειών προγραμματισμού Ολοήμερου Προγράμματος-Αποστολή στοιχείων στη ΔΙΠΕ"),
-        ("έως 31/5", "Υλοποίηση και καταχώρηση της αποτίμησης των δράσεων από τους ΣΥΝΤΟΝΙΣΤΕΣ ΟΜΑΔΩΝ ΔΡΑΣΗΣ"),
+        ("19/5", "Ημέρα Μνήμης για τη Γενοκτονία των Ελλήνων"),
+        (None, "Λήξη ενεργειών προγραμματισμού Ολοήμερου"),
+        ("έως 31/5", "Υλοποίηση και καταχώρηση αποτίμησης δράσεων"),
         ("έως 31/5", "Σχολικό Συμβούλιο"),
         ("31/5-2/6", "Ανάρτηση παρουσιολογίων ΕΣΠΑ"),
     ],
     "Ιούνιος": [
         ("1/6", "Επιβεβαίωση Δεδομένων Myschool"),
-        (None, "9η παιδαγωγική συνεδρίαση για την έκδοση αποτελεσμάτων"),
+        (None, "9η παιδαγωγική συνεδρίαση"),
         ("5/6", "Παγκόσμια Ημέρα Περιβάλλοντος"),
         ("15/6", "Λήξη Σχολικού έτους"),
         (None, "Επίδοση τίτλων"),
         ("έως 21/6", "Άνοιγμα νέου σχολικού έτους στο Myschool"),
         ("21/6-23/6", "Ανάρτηση παρουσιολογίων ΕΣΠΑ"),
-        ("έως 25/6", "Καταχώρηση Έκθεσης Εσωτερικής Αξιολόγησης από τη/τον Διευθύντρια/ντή"),
-        (None, "Δημιουργία νέου σχολικού έτους - καταχώριση"),
+        ("έως 25/6", "Καταχώρηση Έκθεσης Εσωτερικής Αξιολόγησης"),
+        (None, "Δημιουργία νέου σχολικού έτους"),
     ],
     "Ιούλιος": [],
     "Αύγουστος": [],
@@ -175,91 +243,62 @@ def get_tasks_from_db(user_name, month):
                    (user_name, month))
     return cursor.fetchall()
 
-# 📌 Αρχικοποίηση της εφαρμογής και session state
+# 📌 Αρχικοποίηση session state
 if "user_name" not in st.session_state:
     st.session_state.user_name = "Κώστας"
     if add_predefined_tasks(st.session_state.user_name):
-        st.info("Adding predefined tasks...")
-
-if 'show_new_task_form' not in st.session_state:
-    st.session_state.show_new_task_form = False
+        st.info("Προσθήκη προκαθορισμένων εργασιών...")
 
 # 📌 Κεφαλίδα
-st.markdown(f"## 👋 Γεια σου, {st.session_state.user_name}!")
-st.markdown("### 📋 Προγραμματισμός ενεργειών διευθυντή")
-st.write("**Παρακολούθηση Μηνιαίων Εργασιών**")
+st.markdown('<div class="title">📋 Προγραμματισμός Ενεργειών</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="subtitle">Γεια σου, {st.session_state.user_name}! Παρακολούθησε τις μηνιαίες σου εργασίες.</div>', unsafe_allow_html=True)
 
 # 📌 Επιλογή μήνα
 months = list(predefined_tasks.keys())
-selected_month = st.selectbox("📅 Επιλέξτε Μήνα:", months)
+with st.container():
+    st.markdown('<div class="month-select">', unsafe_allow_html=True)
+    selected_month = st.selectbox("📅 Επιλέξτε Μήνα:", months, label_visibility="collapsed")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# 📌 Ανάκτηση εργασιών από τη βάση για τον επιλεγμένο μήνα και χρήστη
+# 📌 Ανάκτηση εργασιών
 tasks = get_tasks_from_db(st.session_state.user_name, selected_month)
 
-# 📌 Υπολογισμός προόδου για τον τρέχοντα μήνα
+# 📌 Υπολογισμός προόδου
 total_tasks = len(tasks)
 completed_tasks = sum(1 for task in tasks if task[4] == 1)
 progress_percentage = (completed_tasks / total_tasks) * 100 if total_tasks > 0 else 0
 
-# 📌 Εμφάνιση γραμμής προόδου
-st.markdown(f"### 📊 Πρόοδος {selected_month}")
-st.progress(progress_percentage / 100.0, text=f"{completed_tasks} / {total_tasks} εργασίες ολοκληρώθηκαν ({progress_percentage:.0f}%)")
+# 📌 Εμφάνιση προόδου
+st.markdown(f'<div class="progress-container"><strong>Πρόοδος {selected_month}</strong></div>', unsafe_allow_html=True)
+st.progress(progress_percentage / 100.0)
+st.markdown(f'<div class="progress-container">{completed_tasks}/{total_tasks} εργασίες ({progress_percentage:.0f}%)</div>', unsafe_allow_html=True)
 
-# 📌 Εμφάνιση εργασιών με checkbox & περιγραφή
-st.markdown(f"### 📌 Λίστα εργασιών {selected_month}")
+# 📌 Εμφάνιση εργασιών
+st.markdown(f"### 📌 Εργασίες {selected_month}")
 if not tasks:
-    st.info(f"Δεν υπάρχουν καταχωρημένες εργασίες για τον μήνα {selected_month}.")
+    st.info(f"Δεν υπάρχουν εργασίες για τον {selected_month}.")
 else:
     for task_id, date, title, task, completed in tasks:
         task_key = f"task_{task_id}_{selected_month}"
-        col1, col2, col3 = st.columns([0.5, 6, 0.5])
-        with col1:
-            is_completed = completed == 1
-            st.checkbox("", key=task_key, value=is_completed, on_change=lambda tid=task_id, current_state=is_completed: cursor.execute("UPDATE tasks SET completed = ? WHERE id = ?", (0 if current_state else 1, tid)) or conn.commit() or st.rerun())
-        with col2:
-            tag_color = "🟢" if completed else "🔴"
-            display_date = date if date else "Χωρίς Ημ."
-            display_title = f"**{display_date} | {title}**"
-            st.markdown(f"{display_title} {tag_color}")
-            if title != task:
-                st.write(task)
-        with col3:
-            if st.button("🗑️", key=f"delete_{task_key}"):
-                cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-                conn.commit()
-                st.rerun()
-
-# 📌 Κουμπί για εμφάνιση της φόρμας προσθήκης νέας εργασίας
-if st.button("✨ Προσθήκη Νέας Εργασίας"):
-    st.session_state.show_new_task_form = True
-
-# 📌 Φόρμα προσθήκης νέας εργασίας
-if st.session_state.show_new_task_form:
-    st.markdown("### 📝 Στοιχεία Νέας Εργασίας")
-    with st.form("new_task_form", clear_on_submit=False):
-        default_date_prefix = ""
-        new_task_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9) - Προαιρετικό:", value=default_date_prefix, key='new_task_date_input')
-        new_task_title = st.text_input("📌 Τίτλος Εργασίας (Χρησιμοποιείται στην περίληψη της λίστας):", key='new_task_title_input')
-        new_task_text = st.text_area("📝 Περιγραφή Εργασίας (Πλήρες κείμενο):", key='new_task_text_area')
-        submitted = st.form_submit_button("✅ Αποθήκευση Εργασίας")
-        cancel_button = st.form_submit_button("❌ Ακύρωση")
-        if submitted and new_task_text:
-            title_to_insert = new_task_title if new_task_title else (new_task_text[:50] + "...") if len(new_task_text) > 50 else new_task_text
-            cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed) VALUES (?, ?, ?, ?, ?, ?)",
-                           (st.session_state.user_name, selected_month, new_task_date, title_to_insert, new_task_text, 0))
-            conn.commit()
-            st.success("Η εργασία προστέθηκε επιτυχώς!")
-            st.session_state.show_new_task_form = False
-            st.session_state.new_task_date_input = ""
-            st.session_state.new_task_title_input = ""
-            st.session_state.new_task_text_area = ""
-            st.rerun()
-        if cancel_button:
-            st.session_state.show_new_task_form = False
-            st.session_state.new_task_date_input = ""
-            st.session_state.new_task_title_input = ""
-            st.session_state.new_task_text_area = ""
-            st.rerun()
+        with st.container():
+            st.markdown('<div class="task-container">', unsafe_allow_html=True)
+            col1, col2, col3 = st.columns([0.5, 6, 0.5])
+            with col1:
+                is_completed = completed == 1
+                st.checkbox("", key=task_key, value=is_completed, on_change=lambda tid=task_id, state=is_completed: cursor.execute("UPDATE tasks SET completed = ? WHERE id = ?", (0 if state else 1, tid)) or conn.commit() or st.rerun())
+            with col2:
+                tag_color = "🟢" if completed else "🔴"
+                display_date = date if date else "Χωρίς Ημ."
+                st.markdown(f'<span class="task-title">{title}</span> <span class="task-status">{tag_color}</span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="task-date">{display_date}</span>', unsafe_allow_html=True)
+                if title != task:
+                    st.write(task)
+            with col3:
+                if st.button("🗑️", key=f"delete_{task_key}"):
+                    cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+                    conn.commit()
+                    st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # 📌 Εκτύπωση σε PDF
 def save_pdf(user_name):
@@ -308,21 +347,10 @@ def save_pdf(user_name):
     c.save()
     return pdf_filename
 
-if st.button("🖨️ Εκτύπωση PDF (Όλες οι εργασίες)"):
+if st.button("🖨️ Εξαγωγή σε PDF"):
     pdf_file = save_pdf(st.session_state.user_name)
     with open(pdf_file, "rb") as f:
         st.download_button("📄 Λήψη PDF", f, pdf_file, "application/pdf")
-
-# 📌 Εκτύπωση σε CSV
-if st.button("📄 Εκτύπωση σε CSV (Όλες οι εργασίες)"):
-    cursor.execute("SELECT month, date, title, task, completed FROM tasks WHERE user_name = ? ORDER BY CASE month WHEN 'Σεπτέμβριος' THEN 1 WHEN 'Οκτώβριος' THEN 2 WHEN 'Νοέμβριος' THEN 3 WHEN 'Δεκέμβριος' THEN 4 WHEN 'Ιανουάριος' THEN 5 WHEN 'Φεβρουάριος' THEN 6 WHEN 'Μάρτιος' THEN 7 WHEN 'Απρίλιος' THEN 8 WHEN 'Μάιος' THEN 9 WHEN 'Ιούνιος' THEN 10 WHEN 'Ιούλιος' THEN 11 WHEN 'Αύγουστος' THEN 12 END, date", (st.session_state.user_name,))
-    all_user_tasks_ordered = cursor.fetchall()
-    df = pd.DataFrame([
-        {"Μήνας": task[0], "Ημερομηνία": task[1], "Τίτλος": task[2], "Εργασία": task[3], "Κατάσταση": "Ολοκληρώθηκε" if task[4] else "Σε εκκρεμότητα"}
-        for task in all_user_tasks_ordered
-    ])
-    st.download_button("📄 Λήψη ως CSV", df.to_csv(index=False).encode('utf-8-sig'),
-                       f"εργασίες_{st.session_state.user_name}.csv", "text/csv", key='download-all-csv')
 
 st.markdown("---")
 st.markdown("*Σύστημα Παρακολούθησης Εργασιών Διευθυντή*")
