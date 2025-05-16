@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 📌 Custom CSS για μοντέρνο και λιτό UI με μικρότερες αποστάσεις
+# 📌 Custom CSS για μοντέρνο και λιτό UI
 st.markdown("""
 <style>
     .stApp {
@@ -31,6 +31,12 @@ st.markdown("""
         color: #34495e;
         font-size: 1.2em;
         text-align: center;
+        margin-bottom: 1em;
+    }
+    .clock {
+        color: #34495e;
+        font-size: 1em;
+        text-align: center;
         margin-bottom: 2em;
     }
     .month-select {
@@ -45,7 +51,7 @@ st.markdown("""
         background-color: #ffffff;
         border-radius: 8px;
         padding: 10px;
-        margin: 5px 0; /* Μειωμένο margin για μικρότερη απόσταση */
+        margin: 5px 0;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         transition: transform 0.2s;
     }
@@ -55,11 +61,11 @@ st.markdown("""
     .task-title {
         color: #2c3e50;
         font-weight: 600;
-        font-size: 1.0em; /* Μικρότερο μέγεθος γραμματοσειράς */
+        font-size: 1.0em;
     }
     .task-date {
         color: #7f8c8d;
-        font-size: 0.8em; /* Μικρότερο μέγεθος για ημερομηνία */
+        font-size: 0.8em;
     }
     .task-status {
         font-size: 1.0em;
@@ -89,7 +95,53 @@ st.markdown("""
     .edit-button:hover {
         background-color: #e67e22;
     }
+    .check-all-button {
+        background-color: #2ecc71;
+        margin-right: 10px;
+    }
+    .check-all-button:hover {
+        background-color: #27ae60;
+    }
+    .uncheck-all-button {
+        background-color: #e74c3c;
+    }
+    .uncheck-all-button:hover {
+        background-color: #c0392b;
+    }
 </style>
+""", unsafe_allow_html=True)
+
+# 📌 JavaScript για εμφάνιση και ενημέρωση ώρας
+st.markdown("""
+<div class="clock" id="clock"></div>
+<script>
+function updateClock() {
+    const now = new Date();
+    const options = {
+        timeZone: 'Europe/Athens',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    };
+    const formatter = new Intl.DateTimeFormat('el-GR', options);
+    const parts = formatter.formatToParts(now);
+    const weekday = parts.find(p => p.type === 'weekday').value;
+    const day = parts.find(p => p.type === 'day').value;
+    const month = parts.find(p => p.type === 'month').value;
+    const year = parts.find(p => p.type === 'year').value;
+    const hour = parts.find(p => p.type === 'hour').value;
+    const minute = parts.find(p => p.type === 'minute').value;
+    const second = parts.find(p => p.type === 'second').value;
+    document.getElementById('clock').innerText = `${hour}:${minute}:${second} EEST, ${weekday}, ${day} ${month} ${year}`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+</script>
 """, unsafe_allow_html=True)
 
 # 📌 Σύνδεση με βάση δεδομένων SQLite
@@ -254,10 +306,21 @@ def get_tasks_from_db(user_name, month):
                    (user_name, month))
     return cursor.fetchall()
 
-# 📌 Ενημέρωση εργασίας στη βάση δεδομένων
-def update_task(task_id, date, title, task):
-    cursor.execute("UPDATE tasks SET date = ?, title = ?, task = ? WHERE id = ?",
-                   (date, title, task, task_id))
+# 📌 Ενημέρωση εργασίας στη βάση δεδομένων (μόνο date και title)
+def update_task(task_id, date, title):
+    cursor.execute("UPDATE tasks SET date = ?, title = ? WHERE id = ?",
+                   (date, title, task_id))
+    conn.commit()
+
+# 📌 Ενημέρωση όλων των εργασιών (check/uncheck all)
+def check_all_tasks(user_name, month):
+    cursor.execute("UPDATE tasks SET completed = 1 WHERE user_name = ? AND month = ?",
+                   (user_name, month))
+    conn.commit()
+
+def uncheck_all_tasks(user_name, month):
+    cursor.execute("UPDATE tasks SET completed = 0 WHERE user_name = ? AND month = ?",
+                   (user_name, month))
     conn.commit()
 
 # 📌 Αρχικοποίηση session state
@@ -296,6 +359,19 @@ if total_tasks > 0:
 else:
     st.markdown('<div class="progress-container">Καμία εργασία για εμφάνιση</div>', unsafe_allow_html=True)
 
+# 📌 Κουμπιά Check All / Uncheck All
+if tasks:
+    with st.container():
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ Επιλογή Όλων", key="check_all", help="Επιλέγει όλες τις εργασίες του μήνα"):
+                check_all_tasks(st.session_state.user_name, selected_month)
+                st.rerun()
+        with col2:
+            if st.button("❌ Αποεπιλογή Όλων", key="uncheck_all", help="Αποεπιλέγει όλες τις εργασίες του μήνα"):
+                uncheck_all_tasks(st.session_state.user_name, selected_month)
+                st.rerun()
+
 # 📌 Εμφάνιση εργασιών
 st.markdown(f"### 📌 Εργασίες {selected_month}")
 if not tasks:
@@ -321,7 +397,7 @@ else:
                 if title != task:
                     st.write(task)
             with col3:
-                if st.button("🗑️", key=f"delete_{task_key}"):
+                if st.button("🗑️", key=f"delete_{task_key}", help="Διαγραφή"):
                     cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
                     conn.commit()
                     st.rerun()
@@ -330,21 +406,20 @@ else:
                     st.session_state.edit_task_id = task_id
             st.markdown('</div>', unsafe_allow_html=True)
 
-# 📌 Φόρμα επεξεργασίας εργασίας
+# 📌 Φόρμα επεξεργασίας εργασίας (μόνο ημερομηνία και τίτλος)
 if st.session_state.edit_task_id is not None:
     task_id = st.session_state.edit_task_id
-    cursor.execute("SELECT date, title, task FROM tasks WHERE id = ?", (task_id,))
+    cursor.execute("SELECT date, title FROM tasks WHERE id = ?", (task_id,))
     task_data = cursor.fetchone()
     if task_data:
         st.markdown("### ✏️ Επεξεργασία Εργασίας")
         with st.form(f"edit_task_form_{task_id}", clear_on_submit=True):
             edit_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9):", value=task_data[0] or "", key=f"edit_date_{task_id}")
             edit_title = st.text_input("📌 Τίτλος Εργασίας:", value=task_data[1], key=f"edit_title_{task_id}")
-            edit_task = st.text_area("📝 Περιγραφή Εργασίας:", value=task_data[2], key=f"edit_task_{task_id}")
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button("✅ Αποθήκευση"):
-                    update_task(task_id, edit_date, edit_title, edit_task)
+                    update_task(task_id, edit_date, edit_title)
                     st.session_state.edit_task_id = None
                     st.success("Η εργασία ενημερώθηκε επιτυχώς!")
                     st.rerun()
