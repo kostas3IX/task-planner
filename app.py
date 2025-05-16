@@ -388,10 +388,9 @@ def export_to_ics(user_name):
             try:
                 actual_date_part = ""
                 if "έως" in date_str_db:
-                    actual_date_part = date_str_db POWERSHELL
-.split("έως")[-1].strip()
+                    actual_date_part = date_str_db.split("έως")[-1].strip()
                 elif "-" in date_str_db and "/" in date_str_db:
-                     actual_date_part = date_str_db.split("-")[-1].strip()
+                    actual_date_part = date_str_db.split("-")[-1].strip()
                 else:
                     actual_date_part = date_str_db.strip()
 
@@ -473,14 +472,14 @@ def save_pdf(user_name):
                 if "έως" in date_str_pdf_sort:
                     actual_date_part_pdf = date_str_pdf_sort.split("έως")[-1].strip()
                 elif "-" in date_str_pdf_sort and "/" in date_str_pdf_sort:
-                     actual_date_part_pdf = date_str_pdf_sort.split("-")[-1].strip()
+                    actual_date_part_pdf = date_str_pdf_sort.split("-")[-1].strip()
                 else:
                     actual_date_part_pdf = date_str_pdf_sort.strip()
                 
                 if '/' not in actual_date_part_pdf:
                     month_number_pdf = month_map.get(task_month_name_pdf)
                     if month_number_pdf:
-                       actual_date_part_pdf = f"{actual_date_part_pdf}/{month_number_pdf}"
+                        actual_date_part_pdf = f"{actual_date_part_pdf}/{month_number_pdf}"
                 
                 parts_pdf = actual_date_part_pdf.split('/')
                 if len(parts_pdf) == 2:
@@ -566,7 +565,7 @@ st.markdown('<div class="subtitle">Γεια σου, Κώστα! Παρακολο
 months_list = list(predefined_tasks.keys())
 with st.container():
     st.markdown('<div class="month-select">', unsafe_allow_html=True)
-    selected_month = st.selectbox("Επιλέξτε Μήνα:", months_list, label_visibility="visible")
+    selected_month = st.selectbox("Επιλέξτε Μήνα:", months_list, label_visibilitytais: "visible")
     st.markdown('</div>', unsafe_allow_html=True)
 
 # 📌 Φόρμα προσθήκης task
