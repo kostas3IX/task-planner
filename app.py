@@ -565,7 +565,7 @@ st.markdown('<div class="subtitle">Γεια σου, Κώστα! Παρακολο
 months_list = list(predefined_tasks.keys())
 with st.container():
     st.markdown('<div class="month-select">', unsafe_allow_html=True)
-    selected_month = st.selectbox("Επιλέξτε Μήνα:", months_list, label_visibilitytais: "visible")
+    selected_month = st.selectbox("Επιλέξτε Μήνα:", months_list, label_visibility="visible")
     st.markdown('</div>', unsafe_allow_html=True)
 
 # 📌 Φόρμα προσθήκης task
