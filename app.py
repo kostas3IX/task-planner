@@ -151,8 +151,6 @@ def main():
                             "text": new_task_text
                         })
                         save_current_state()
-
-                        # Κλείσιμο της φόρμας μετά την προσθήκη της εργασίας
                         st.session_state.adding_task = False
                         st.rerun()
 
