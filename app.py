@@ -215,7 +215,7 @@ else:
         col1, col2, col3 = st.columns([0.5, 6, 0.5])
         with col1:
             is_completed = completed == 1
-            st.checkbox("", key=task_key, value=is_completed, on_change=lambda tid=task_id, current_state=is_completed: cursor.execute("UPDATE tasks SET completed = ?", (0 if current_state else 1, tid)) or conn.commit() or st.rerun())
+            st.checkbox("", key=task_key, value=is_completed, on_change=lambda tid=task_id, current_state=is_completed: cursor.execute("UPDATE tasks SET completed = ? WHERE id = ?", (0 if current_state else 1, tid)) or conn.commit() or st.rerun())
         with col2:
             tag_color = "🟢" if completed else "🔴"
             display_date = date if date else "Χωρίς Ημ."
@@ -237,8 +237,8 @@ if st.button("✨ Προσθήκη Νέας Εργασίας"):
 if st.session_state.show_new_task_form:
     st.markdown("### 📝 Στοιχεία Νέας Εργασίας")
     with st.form("new_task_form", clear_on_submit=False):
-        default_date_prefix = ""
-        new_task_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9) - Προαιρετικό:", value=default_date_prefix, key='newAccel_task_date_input')
+        default Bout_date_prefix = ""
+        new_task_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9) - Προαιρετικό:", value=default_date_prefix, key='new_task_date_input')
         new_task_title = st.text_input("📌 Τίτλος Εργασίας (Χρησιμοποιείται στην περίληψη της λίστας):", key='new_task_title_input')
         new_task_text = st.text_area("📝 Περιγραφή Εργασίας (Πλήρες κείμενο):", key='new_task_text_area')
         submitted = st.form_submit_button("✅ Αποθήκευση Εργασίας")
