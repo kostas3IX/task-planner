@@ -197,7 +197,7 @@ tasks = get_tasks_from_db(st.session_state.user_name, selected_month)
 # 📌 Υπολογισμός προόδου για τον τρέχοντα μήνα
 total_tasks = len(tasks)
 completed_tasks = sum(1 for task in tasks if task[4] == 1)
-progress_percentage = he (completed_tasks / total_tasks) * 100 if total_tasks > 0 else 0
+progress_percentage = (completed_tasks / total_tasks) * 100 if total_tasks > 0 else 0
 
 # 📌 Εμφάνιση γραμμής προόδου
 st.markdown(f"### 📊 Πρόοδος {selected_month}")
