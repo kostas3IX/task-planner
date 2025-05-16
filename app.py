@@ -2,15 +2,10 @@ import streamlit as st
 import sqlite3
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 import os
 from datetime import datetime, timedelta
 import icalendar
 from io import BytesIO
-import json
-import urllib.request
-import tarfile
 
 # 📌 Ρύθμιση Streamlit UI
 st.set_page_config(
@@ -22,7 +17,6 @@ st.set_page_config(
 # 📌 Custom CSS
 st.markdown("""
 <style>
-    /* ... (Your CSS remains the same) ... */
     .stApp {
         background-color: #f5f7fa;
         font-family: 'Arial', sans-serif;
@@ -122,38 +116,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 📌 JavaScript για ώρα
-st.markdown("""
-<div class="clock" id="clock"></div>
-<script>
-function updateClock() {
-    const now = new Date();
-    const options = {
-        timeZone: 'Europe/Athens',
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-    };
-    const formatter = new Intl.DateTimeFormat('el-GR', options);
-    const parts = formatter.formatToParts(now);
-    const weekday = parts.find(p => p.type === 'weekday').value;
-    const day = parts.find(p => p.type === 'day').value;
-    const month_js = parts.find(p => p.type === 'month').value;
-    const year = parts.find(p => p.type === 'year').value;
-    const hour = parts.find(p => p.type === 'hour').value;
-    const minute = parts.find(p => p.type === 'minute').value;
-    const second = parts.find(p => p.type === 'second').value;
-    document.getElementById('clock').innerText = `${hour}:${minute}:${second} EEST, ${weekday}, ${day} ${month_js} ${year}`;
-}
-setInterval(updateClock, 1000);
-updateClock();
-</script>
-""", unsafe_allow_html=True)
+# 📌 Εμφάνιση τρέχουσας ημερομηνίας
+current_time = datetime.now().strftime("%H:%M:%S EEST, %A, %d %B %Y")
+st.markdown(f'<div class="clock">{current_time}</div>', unsafe_allow_html=True)
 
 # 📌 Σύνδεση με SQLite
 conn = sqlite3.connect("tasks.db", check_same_thread=False)
@@ -178,76 +143,27 @@ month_map = {
     "Ιανουάριος": 1, "Φεβρουάριος": 2, "Μάρτιος": 3, "Απρίλιος": 4,
     "Μάιος": 5, "Ιούνιος": 6, "Ιούλιος": 7, "Αύγουστος": 8
 }
-target_year_for_dates = datetime.now().year # Χρήση τρέχοντος έτους ή του επόμενου αν είμαστε στο τέλος του έτους
-if datetime.now().month > 8 : # Αν είμαστε μετά τον Αύγουστο, οι σχολικές εργασίες αφορούν το επόμενο έτος
-    target_year_for_dates = datetime.now().year if datetime.now().month < 9 else datetime.now().year +1
 
+month_genitive_map = {
+    "Σεπτέμβριος": "Σεπτεμβρίου",
+    "Οκτώβριος": "Οκτωβρίου",
+    "Νοέμβριος": "Νοεμβρίου",
+    "Δεκέμβριος": "Δεκεμβρίου",
+    "Ιανουάριος": "Ιανουαρίου",
+    "Φεβρουάριος": "Φεβρουαρίου",
+    "Μάρτιος": "Μαρτίου",
+    "Απρίλιος": "Απριλίου",
+    "Μάιος": "Μαΐου",
+    "Ιούνιος": "Ιουνίου",
+    "Ιούλιος": "Ιουλίου",
+    "Αύγουστος": "Αυγούστου"
+}
+
+target_year_for_dates = datetime.now().year
+if datetime.now().month > 8:
+    target_year_for_dates = datetime.now().year if datetime.now().month < 9 else datetime.now().year + 1
 
 # 📌 Ορισμοί Συναρτήσεων
-def get_calendar_events(user_name):
-    cursor.execute("SELECT month, date, title, completed FROM tasks WHERE user_name = ?", (user_name,))
-    tasks_db = cursor.fetchall()
-    events = []
-    # Υπολογισμός του έτους για τις ημερομηνίες του ημερολογίου
-    # Αν ο τρέχων μήνας είναι π.χ. Σεπτέμβριος-Δεκέμβριος, το έτος είναι το τρέχον.
-    # Αν ο τρέχων μήνας είναι Ιανουάριος-Αύγουστος, οι εργασίες Σεπ-Δεκ αναφέρονται στο προηγούμενο έτος ημερολογιακά
-    # αλλά στο ίδιο σχολικό έτος. Για απλότητα, θα χρησιμοποιήσουμε μια λογική που κοιτά τον μήνα της εργασίας.
-    current_actual_year = datetime.now().year
-
-    for month_name, date_str_db, title, completed in tasks_db:
-        if date_str_db and month_name in month_map:
-            # Καθορισμός του έτους για το event
-            event_year = current_actual_year
-            if month_map[month_name] < 9 and datetime.now().month >=9: # π.χ. Είμαστε Οκτώβριος 2024, το task είναι για Ιανουάριο -> 2025
-                event_year = current_actual_year + 1
-            elif month_map[month_name] >= 9 and datetime.now().month < 9: # π.χ. Είμαστε Μάρτιος 2025, το task είναι για Σεπτέμβριο -> 2024
-                event_year = current_actual_year -1
-
-
-            try:
-                actual_date_part = ""
-                if "έως" in date_str_db:
-                    actual_date_part = date_str_db.split("έως")[-1].strip()
-                elif "-" in date_str_db and "/" in date_str_db: # π.χ. "1-5/9"
-                    actual_date_part = date_str_db.split("-")[-1].strip() # Παίρνουμε την τελευταία ημερομηνία του εύρους
-                else: # απλή ημερομηνία "DD/MM"
-                    actual_date_part = date_str_db.strip()
-
-                # Εξασφάλιση ότι το actual_date_part έχει και τον μήνα αν λείπει (π.χ. "20" από "έως 20")
-                if '/' not in actual_date_part:
-                    actual_date_part = f"{actual_date_part}/{month_map[month_name]}"
-                
-                # Εξασφάλιση ότι το actual_date_part έχει την μορφή day/month
-                parts = actual_date_part.split('/')
-                if len(parts) == 2:
-                    day_part, month_part_str = parts
-                    # Διασφάλιση ότι ο month_part_str είναι αριθμός
-                    if not month_part_str.isdigit(): month_part_str = str(month_map[month_name])
-                    
-                    event_date_obj = datetime.strptime(f"{day_part}/{month_part_str}/{event_year}", "%d/%m/%Y")
-                    events.append({
-                        "title": title,
-                        "start": event_date_obj.strftime("%Y-%m-%d"),
-                        "color": "#2ecc71" if completed else "#e74c3c"
-                    })
-                else: # fallback αν η μορφή δεν είναι η αναμενόμενη
-                    # Αυτό το fallback μπορεί να μην είναι ιδανικό, χρειάζεται καλή μορφή ημερομηνίας στη βάση
-                    day_only_from_actual = actual_date_part.split('/')[0]
-                    event_date_obj = datetime.strptime(f"{day_only_from_actual}/{month_map[month_name]}/{event_year}", "%d/%m/%Y")
-                    events.append({
-                        "title": title,
-                        "start": event_date_obj.strftime("%Y-%m-%d"),
-                        "color": "#2ecc71" if completed else "#e74c3c"
-                    })
-            except ValueError:
-                # st.warning(f"Calendar Date Parse Error: '{date_str_db}', Month: '{month_name}'")
-                continue
-            except Exception:
-                # st.error(f"Unknown Calendar Date Error: {e} for '{date_str_db}'")
-                continue
-    return events
-
-
 predefined_tasks = {
     "Σεπτέμβριος": [
         ("1/9", "Πράξη ανάληψης υπηρεσίας"),
@@ -372,7 +288,6 @@ predefined_tasks = {
 }
 month_order = {name: i for i, name in enumerate(predefined_tasks.keys())}
 
-
 def add_predefined_tasks(user_name):
     cursor.execute("SELECT COUNT(*) FROM tasks WHERE user_name = ?", (user_name,))
     count = cursor.fetchone()[0]
@@ -411,17 +326,15 @@ def uncheck_all_tasks(user_name, month_val):
                    (user_name, month_val))
     conn.commit()
 
-def is_task_urgent(date_str, task_month_name=None): # Προσθήκη task_month_name για context
+def is_task_urgent(date_str, task_month_name=None):
     if not date_str:
         return False
 
-    # Υπολογισμός έτους για τον έλεγχο προθεσμίας
     check_year = datetime.now().year
     if task_month_name and month_map[task_month_name] < 9 and datetime.now().month >= 9:
         check_year = datetime.now().year + 1
     elif task_month_name and month_map[task_month_name] >= 9 and datetime.now().month < 9:
-         check_year = datetime.now().year -1
-
+         check_year = datetime.now().year - 1
 
     try:
         end_date_part = ""
@@ -440,23 +353,22 @@ def is_task_urgent(date_str, task_month_name=None): # Προσθήκη task_mont
         else: 
             return False
 
-        if not end_date_part: return False
+        if not end_date_part:
+            return False
 
         if '/' not in end_date_part:
             if task_month_name and task_month_name in month_map:
                 end_date_part = f"{end_date_part}/{month_map[task_month_name]}"
-            else: # Δεν μπορούμε να προσδιορίσουμε τον μήνα
+            else:
                 return False
         
         end_date_obj = datetime.strptime(f"{end_date_part}/{check_year}", "%d/%m/%Y")
         today = datetime.now()
-        return 0 <= (end_date_obj - today).days <= 2 # 0 για την ίδια μέρα, 1 για αύριο, 2 για μεθαύριο
+        return 0 <= (end_date_obj - today).days <= 2
     except ValueError:
-        # st.warning(f"Urgent Date Parse Error: '{date_str}', Month: '{task_month_name}'")
         return False
     except Exception:
         return False
-
 
 def export_to_ics(user_name):
     cal = icalendar.Calendar()
@@ -469,14 +381,15 @@ def export_to_ics(user_name):
     for month_name, date_str_db, title, completed in tasks_db:
         if date_str_db and month_name in month_map:
             event_year = current_actual_year
-            if month_map[month_name] < 9 and datetime.now().month >=9:
+            if month_map[month_name] < 9 and datetime.now().month >= 9:
                 event_year = current_actual_year + 1
             elif month_map[month_name] >= 9 and datetime.now().month < 9:
-                event_year = current_actual_year -1
+                event_year = current_actual_year - 1
             try:
                 actual_date_part = ""
                 if "έως" in date_str_db:
-                    actual_date_part = date_str_db.split("έως")[-1].strip()
+                    actual_date_part = date_str_db POWERSHELL
+.split("έως")[-1].strip()
                 elif "-" in date_str_db and "/" in date_str_db:
                      actual_date_part = date_str_db.split("-")[-1].strip()
                 else:
@@ -488,7 +401,8 @@ def export_to_ics(user_name):
                 parts = actual_date_part.split('/')
                 if len(parts) == 2:
                     day_part, month_part_str = parts
-                    if not month_part_str.isdigit(): month_part_str = str(month_map[month_name])
+                    if not month_part_str.isdigit():
+                        month_part_str = str(month_map[month_name])
                     event_date_obj = datetime.strptime(f"{day_part}/{month_part_str}/{event_year}", "%d/%m/%Y")
                 else:
                     day_only_from_actual = actual_date_part.split('/')[0]
@@ -501,7 +415,6 @@ def export_to_ics(user_name):
                 event_ics.add('description', f"Κατάσταση: {'Ολοκληρωμένο' if completed else 'Εκκρεμές'}")
                 cal.add_component(event_ics)
             except ValueError:
-                # st.warning(f"ICS Date Parse Error: '{date_str_db}', Month: '{month_name}'")
                 continue
             except Exception:
                 continue
@@ -512,40 +425,8 @@ def export_to_ics(user_name):
 
 def save_pdf(user_name):
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    # Τοποθέτηση του PDF στον τρέχοντα κατάλογο για απλότητα στο Render
     pdf_filename = f"{user_name}_all_tasks_{timestamp}.pdf" 
-    
-    # Προσωρινή απενεργοποίηση λήψης font για απλοποίηση αν δημιουργεί θέματα στο Render
-    # Μπορείτε να το ενεργοποιήσετε αν έχετε τρόπο να διαχειριστείτε τα fonts στο Render
-    font_path = None 
-    active_font = "Helvetica" # Default σε Helvetica
-
-    # Decomment to enable font download (ensure /tmp is writable on Render)
-    # font_dir = "/tmp/dejavu-fonts-ttf-2.37/ttf/"
-    # font_path = os.path.join(font_dir, "DejaVuSans.ttf")
-    # if not os.path.exists(font_path):
-    #     os.makedirs(font_dir, exist_ok=True)
-    #     # st.info("Κατεβάζοντας γραμματοσειρά για το PDF (DejaVuSans)...") # Μπορεί να μην εμφανίζεται σωστά στο Render κατά τη δημιουργία PDF
-    #     try:
-    #         font_url = "https://github.com/dejavu-fonts/dejavu-fonts/releases/download/version-2.37/dejavu-fonts-ttf-2.37.tar.bz2"
-    #         font_archive_path = "/tmp/dejavu-fonts.tar.bz2"
-    #         urllib.request.urlretrieve(font_url, font_archive_path)
-    #         with tarfile.open(font_archive_path, "r:bz2") as tar:
-    #             member_path = "dejavu-fonts-ttf-2.37/ttf/DejaVuSans.ttf"
-    #             tar.extract(member_path, path="/tmp")
-    #         # st.success("Η γραμματοσειρά φορτώθηκε.")
-    #         pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
-    #         active_font = "DejaVuSans"
-    #     except Exception as e:
-    #         # st.error(f"Σφάλμα κατά τη λήψη/εξαγωγή γραμματοσειράς: {e}")
-    #         active_font = "Helvetica"
-    # else: # Font already exists
-    #     try:
-    #         pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
-    #         active_font = "DejaVuSans"
-    #     except Exception:
-    #         active_font = "Helvetica"
-
+    active_font = "Helvetica"
 
     c = canvas.Canvas(pdf_filename, pagesize=A4)
     c.setFont(active_font, 12)
@@ -570,7 +451,7 @@ def save_pdf(user_name):
     y_position = draw_header_pdf(c, user_name, active_font)
     c.setFont(active_font, 10)
     
-    cursor.execute("SELECT month, date, title, task, completed FROM tasks WHERE user_name = ? ", (user_name,))
+    cursor.execute("SELECT month, date, title, task, completed FROM tasks WHERE user_name = ?", (user_name,))
     all_user_tasks = cursor.fetchall()
     
     current_actual_year_pdf = datetime.now().year
@@ -584,7 +465,7 @@ def save_pdf(user_name):
         if month_map[task_month_name_pdf] < 9 and datetime.now().month >= 9:
             sort_year = current_actual_year_pdf + 1
         elif month_map[task_month_name_pdf] >= 9 and datetime.now().month < 9:
-            sort_year = current_actual_year_pdf -1
+            sort_year = current_actual_year_pdf - 1
 
         if date_str_pdf_sort:
             try:
@@ -604,15 +485,15 @@ def save_pdf(user_name):
                 parts_pdf = actual_date_part_pdf.split('/')
                 if len(parts_pdf) == 2:
                     day_part_pdf, month_part_str_pdf = parts_pdf
-                    if not month_part_str_pdf.isdigit(): month_part_str_pdf = str(month_map[task_month_name_pdf])
+                    if not month_part_str_pdf.isdigit():
+                        month_part_str_pdf = str(month_map[task_month_name_pdf])
                     parsed_date_pdf = datetime.strptime(f"{day_part_pdf}/{month_part_str_pdf}/{sort_year}", "%d/%m/%Y")
                 else:
                     day_only_pdf_sort = actual_date_part_pdf.split('/')[0]
                     parsed_date_pdf = datetime.strptime(f"{day_only_pdf_sort}/{month_map[task_month_name_pdf]}/{sort_year}", "%d/%m/%Y")
             except:
-                parsed_date_pdf = datetime.min # Για ταξινόμηση, αν αποτύχει η ανάλυση
+                parsed_date_pdf = datetime.min
         return (month_idx, parsed_date_pdf if parsed_date_pdf else datetime.min, task_item_pdf[1] if task_item_pdf[1] else "")
-
 
     all_user_tasks_ordered = sorted(all_user_tasks, key=sort_key_for_tasks)
     
@@ -649,7 +530,7 @@ def save_pdf(user_name):
             current_line_pdf = "   Περιγραφή: "
             words_pdf = task_pdf_desc.split(' ')
             for word_pdf in words_pdf:
-                if c.stringWidth(current_line_pdf + word_pdf + " ", active_font, 10) <= max_width_pdf: # Προσθήκη κενού για καλύτερο υπολογισμό
+                if c.stringWidth(current_line_pdf + word_pdf + " ", active_font, 10) <= max_width_pdf:
                     current_line_pdf += word_pdf + " "
                 else:
                     desc_lines_pdf.append(current_line_pdf.strip())
@@ -668,78 +549,35 @@ def save_pdf(user_name):
     c.save()
     return pdf_filename
 
-# 📌 FullCalendar Markdown
-calendar_events = get_calendar_events("Κώστα") # Κλήση μετά τον ορισμό της συνάρτησης
-st.markdown(f"""
-<link href='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css' rel='stylesheet' />
-<script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js'></script>
-<script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/locales/el.js'></script>
-<div id='calendar_div_main'></div>
-<script>
-document.addEventListener('DOMContentLoaded', function() {{
-    var calendarEl = document.getElementById('calendar_div_main');
-    if (calendarEl && typeof FullCalendar !== 'undefined') {{ // Έλεγχος και για το FullCalendar object
-        try {{
-            var calendar = new FullCalendar.Calendar(calendarEl, {{
-                initialView: 'dayGridMonth',
-                locale: 'el',
-                height: '550px',
-                events: {json.dumps(calendar_events)},
-                eventClick: function(info) {{
-                    alert('Εργασία: ' + info.event.title + '\\nΗμερομηνία: ' + new Date(info.event.start).toLocaleDateString('el-GR'));
-                }},
-                dateClick: function(info) {{
-                    // Εδώ θα μπορούσατε να ανοίξετε τη φόρμα προσθήκης task για την επιλεγμένη ημερομηνία
-                    // st.session_state.selected_date_for_new_task = info.dateStr;
-                    // Δεν μπορούμε να καλέσουμε st.session_state απευθείας από JS, χρειάζεται άλλος μηχανισμός
-                    // console.log('Date clicked: ' + info.dateStr);
-                }}
-            }});
-            calendar.render();
-        }} catch (e) {{
-            console.error("Error rendering FullCalendar: ", e);
-            calendarEl.innerHTML = "<p>Σφάλμα φόρτωσης ημερολογίου. Ελέγξτε την κονσόλα για λεπτομέρειες.</p>";
-        }}
-    }} else if (!calendarEl) {{
-        console.error("Calendar element not found: calendar_div_main");
-    }} else if (typeof FullCalendar === 'undefined') {{
-         console.error("FullCalendar library not loaded.");
-    }}
-}});
-</script>
-""", unsafe_allow_html=True)
-
-
 # 📌 Αρχικοποίηση session state
 if "user_name" not in st.session_state:
     st.session_state.user_name = "Κώστας"
     if add_predefined_tasks(st.session_state.user_name):
-        st.success("Οι προκαθορισμένες εργασίες προστέθηκαν για τον χρήστη Κώστα.")
+        st.success("Οι προκαθορισμένες εργασίες προστέθηκαν για τον χρήστη Κώστας.")
 
 if "edit_task_id" not in st.session_state:
     st.session_state.edit_task_id = None
 
 # 📌 Κεφαλίδα
 st.markdown('<div class="title">📋 Προγραμματισμός Ενεργειών</div>', unsafe_allow_html=True)
-st.markdown(f'<div class="subtitle">Γεια σου, {st.session_state.user_name}! Παρακολούθησε τις μηνιαίες σου εργασίες.</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Γεια σου, Κώστα! Παρακολούθησε τις μηνιαίες σου εργασίες.</div>', unsafe_allow_html=True)
 
 # 📌 Επιλογή μήνα
 months_list = list(predefined_tasks.keys())
 with st.container():
     st.markdown('<div class="month-select">', unsafe_allow_html=True)
-    selected_month = st.selectbox("Επιλέξτε Μήνα:", months_list, label_visibility="visible", key="month_selector")
+    selected_month = st.selectbox("Επιλέξτε Μήνα:", months_list, label_visibility="visible")
     st.markdown('</div>', unsafe_allow_html=True)
 
 # 📌 Φόρμα προσθήκης task
 st.markdown("### ➕ Προσθήκη Νέου Task")
 with st.form("add_task_form", clear_on_submit=True):
-    new_date = st.text_input("Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9):", key="new_date_input_form")
-    new_title = st.text_input("Τίτλος Εργασίας:", key="new_title_input_form")
+    new_date = st.text_input("Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9):")
+    new_title = st.text_input("Τίτλος Εργασίας:")
     if st.form_submit_button("Προσθήκη Task"):
         if new_date and new_title:
             add_task(st.session_state.user_name, selected_month, new_date, new_title)
             st.success("Το task προστέθηκε επιτυχώς!")
-            # Δεν χρειάζεται st.rerun() εδώ, το form submission το κάνει αυτόματα
         else:
             st.error("Παρακαλώ συμπληρώστε όλα τα πεδία.")
 
@@ -749,7 +587,7 @@ total_tasks = len(tasks)
 completed_tasks_count = sum(1 for task_item in tasks if task_item[4] == 1)
 progress_percentage = (completed_tasks_count / total_tasks) * 100 if total_tasks > 0 else 0
 
-st.markdown(f'<div class="progress-container"><strong>Πρόοδος {selected_month}</strong></div>', unsafe_allow_html=True)
+st.markdown(f'<div class="progress-container"><strong>Πρόοδος {month_genitive_map[selected_month]}</strong></div>', unsafe_allow_html=True)
 if total_tasks > 0:
     st.progress(progress_percentage / 100.0)
     st.markdown(f'<div class="progress-container">{completed_tasks_count}/{total_tasks} εργασίες ({progress_percentage:.0f}%)</div>', unsafe_allow_html=True)
@@ -760,13 +598,11 @@ if tasks:
     col_check, col_uncheck, col_export_ics, col_export_pdf_col = st.columns([1,1,1.5,1.5])
 
     with col_check:
-        if st.button("Επιλογή Όλων", key="check_all_btn_ui", help="Επιλέγει όλες τις εργασίες του μήνα", use_container_width=True):
+        if st.button("Επιλογή Όλων", help="Επιλέγει όλες τις εργασίες του μήνα", use_container_width=True):
             check_all_tasks(st.session_state.user_name, selected_month)
-            # Δεν χρειάζεται st.rerun()
     with col_uncheck:
-        if st.button("Αποεπιλογή Όλων", key="uncheck_all_btn_ui", help="Αποεπιλέγει όλες τις εργασίες του μήνα", use_container_width=True):
+        if st.button("Αποεπιλογή Όλων", help="Αποεπιλέγει όλες τις εργασίες του μήνα", use_container_width=True):
             uncheck_all_tasks(st.session_state.user_name, selected_month)
-            # Δεν χρειάζεται st.rerun()
     with col_export_ics:
         ics_file_data, ics_filename_data = export_to_ics(st.session_state.user_name)
         st.download_button(
@@ -775,11 +611,10 @@ if tasks:
             file_name=ics_filename_data,
             mime="text/calendar",
             help="Εξαγωγή όλων των tasks σε ICS αρχείο για Google Calendar",
-            use_container_width=True,
-            key="download_ics_btn"
+            use_container_width=True
         )
     with col_export_pdf_col:
-        if st.button("Εξαγωγή σε PDF", help="Εξαγωγή όλων των tasks σε PDF", key="export_pdf_main_btn", use_container_width=True):
+        if st.button("Εξαγωγή σε PDF", help="Εξαγωγή όλων των tasks σε PDF", use_container_width=True):
             pdf_filename_tmp = save_pdf(st.session_state.user_name)
             if pdf_filename_tmp:
                 with open(pdf_filename_tmp, "rb") as fp:
@@ -788,10 +623,8 @@ if tasks:
                         data=fp,
                         file_name=os.path.basename(pdf_filename_tmp),
                         mime="application/pdf",
-                        key="download_pdf_final_btn",
                         use_container_width=True
                     )
-                # Δεν χρειάζεται st.rerun() ούτε εδώ
             else:
                 st.error("Αποτυχία δημιουργίας PDF.")
 
@@ -803,7 +636,7 @@ if not tasks:
 else:
     for task_id, date_val, title_val, task_desc, completed_status in tasks:
         task_key_prefix = f"task_{task_id}_{selected_month.replace(' ', '_')}"
-        is_urgent_task = is_task_urgent(date_val, selected_month) # Περνάμε και τον μήνα για context
+        is_urgent_task = is_task_urgent(date_val, selected_month)
 
         container_class = "task-container"
         if is_urgent_task:
@@ -819,10 +652,9 @@ else:
                     f"##{task_id}_cb",
                     value=is_checked_val,
                     key=f"cb_{task_key_prefix}_display",
-                    on_change=(lambda tid, current_status_val: ( # Άλλαξα το όνομα current_status
+                    on_change=(lambda tid, current_status_val: (
                         cursor.execute("UPDATE tasks SET completed = ? WHERE id = ?", (0 if current_status_val else 1, tid)),
                         conn.commit()
-                        # Δεν χρειάζεται st.rerun() εδώ, το on_change το κάνει αυτόματα
                     )),
                     args=(task_id, is_checked_val),
                     label_visibility="collapsed"
@@ -841,11 +673,9 @@ else:
                 if st.button("🗑️", key=f"delete_{task_key_prefix}_display", help="Διαγραφή Εργασίας"):
                     cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
                     conn.commit()
-                    # Δεν χρειάζεται st.rerun()
             with cols_display[3]:
                 if st.button("✏️", key=f"edit_{task_key_prefix}_display", help="Επεξεργασία Εργασίας"):
                     st.session_state.edit_task_id = task_id
-                    # Δεν χρειάζεται st.rerun() εδώ, η αλλαγή στο session_state θα την πιάσει το επόμενο rerun
             st.markdown('</div>', unsafe_allow_html=True)
 
 if st.session_state.edit_task_id is not None:
@@ -856,23 +686,20 @@ if st.session_state.edit_task_id is not None:
     if task_data_to_edit:
         st.markdown("### ✏️ Επεξεργασία Εργασίας")
         with st.form(f"edit_task_form_{active_task_id}_main", clear_on_submit=True):
-            edit_date_val_form = st.text_input("Ημερομηνία (π.χ. 15/9, έως 20/9):", value=task_data_to_edit[0] or "", key=f"edit_date_{active_task_id}_form")
-            edit_title_val_form = st.text_input("Τίτλος Εργασίας:", value=task_data_to_edit[1], key=f"edit_title_{active_task_id}_form")
+            edit_date_val_form = st.text_input("Ημερομηνία (π.χ. 15/9, έως 20/9):", value=task_data_to_edit[0] or "")
+            edit_title_val_form = st.text_input("Τίτλος Εργασίας:", value=task_data_to_edit[1])
 
             form_cols_edit = st.columns(2)
             with form_cols_edit[0]:
-                if st.form_submit_button("Αποθήκευση", key="save_edit_btn"):
+                if st.form_submit_button("Αποθήκευση"):
                     update_task(active_task_id, edit_date_val_form, edit_title_val_form)
                     st.session_state.edit_task_id = None
                     st.success("Η εργασία ενημερώθηκε επιτυχώς!")
-                    # Δεν χρειάζεται st.rerun()
             with form_cols_edit[1]:
-                if st.form_submit_button("Ακύρωση", key="cancel_edit_btn"):
+                if st.form_submit_button("Ακύρωση"):
                     st.session_state.edit_task_id = None
-                    # Δεν χρειάζεται st.rerun()
     else:
         st.session_state.edit_task_id = None
-
 
 st.markdown("---")
 st.markdown("*Σύστημα Παρακολούθησης Εργασιών Διευθυντή*")
