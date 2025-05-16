@@ -237,7 +237,7 @@ if st.button("✨ Προσθήκη Νέας Εργασίας"):
 if st.session_state.show_new_task_form:
     st.markdown("### 📝 Στοιχεία Νέας Εργασίας")
     with st.form("new_task_form", clear_on_submit=False):
-        default Bout_date_prefix = ""
+        default_date_prefix = ""
         new_task_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9) - Προαιρετικό:", value=default_date_prefix, key='new_task_date_input')
         new_task_title = st.text_input("📌 Τίτλος Εργασίας (Χρησιμοποιείται στην περίληψη της λίστας):", key='new_task_title_input')
         new_task_text = st.text_area("📝 Περιγραφή Εργασίας (Πλήρες κείμενο):", key='new_task_text_area')
