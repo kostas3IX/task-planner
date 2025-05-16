@@ -3,6 +3,13 @@ import sqlite3
 import pandas as pd
 from reportlab.pdfgen import canvas # Make sure reportlab is installed (`pip install reportlab`)
 
+# 📌 Ρύθμιση Streamlit UI (πρώτη εντολή Streamlit)
+st.set_page_config(
+    page_title="Προγραμματισμός Ενεργειών",
+    page_icon="📋",
+    layout="wide"
+)
+
 # 📌 Σύνδεση με βάση δεδομένων SQLite
 conn = sqlite3.connect("tasks.db")
 cursor = conn.cursor()
@@ -153,13 +160,14 @@ def add_predefined_tasks(user_name):
     cursor.execute("SELECT COUNT(*) FROM tasks WHERE user_name = ?", (user_name,))
     count = cursor.fetchone()[0]
     if count == 0:
-        st.info("Adding predefined tasks...")
         for month, tasks in predefined_tasks.items():
             for date, task_desc in tasks:
                 title = task_desc
                 cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed) VALUES (?, ?, ?, ?, ?, ?)",
                                (user_name, month, date, title, task_desc, 0))
         conn.commit()
+        return True
+    return False
 
 # 📌 Ανάκτηση εργασιών από τη βάση δεδομένων
 def get_tasks_from_db(user_name, month):
@@ -170,17 +178,11 @@ def get_tasks_from_db(user_name, month):
 # 📌 Αρχικοποίηση της εφαρμογής και session state
 if "user_name" not in st.session_state:
     st.session_state.user_name = "Κώστας"
-    add_predefined_tasks(st.session_state.user_name)
+    if add_predefined_tasks(st.session_state.user_name):
+        st.info("Adding predefined tasks...")
 
 if 'show_new_task_form' not in st.session_state:
     st.session_state.show_new_task_form = False
-
-# 📌 Ρύθμιση Streamlit UI
-st.set_page_config(
-    page_title="Προγραμματισμός Ενεργειών",
-    page_icon="📋",
-    layout="wide"
-)
 
 # 📌 Κεφαλίδα
 st.markdown(f"## 👋 Γεια σου, {st.session_state.user_name}!")
@@ -236,7 +238,7 @@ if st.session_state.show_new_task_form:
     st.markdown("### 📝 Στοιχεία Νέας Εργασίας")
     with st.form("new_task_form", clear_on_submit=False):
         default_date_prefix = ""
-        new_task_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9) - Προαιρετικό:", value=default_date_prefix, key='new_task_date_input')
+        new_task_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9) - Προαιρετικό:", value=default_date_prefix, key='newAccel_task_date_input')
         new_task_title = st.text_input("📌 Τίτλος Εργασίας (Χρησιμοποιείται στην περίληψη της λίστας):", key='new_task_title_input')
         new_task_text = st.text_area("📝 Περιγραφή Εργασίας (Πλήρες κείμενο):", key='new_task_text_area')
         submitted = st.form_submit_button("✅ Αποθήκευση Εργασίας")
