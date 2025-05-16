@@ -124,20 +124,10 @@ def main():
                     new_task_text = st.text_area("Περιγραφή εργασίας:")
                     submitted = st.form_submit_button("Προσθήκη")
                     if submitted and new_task_text:
-                        # Αρχικοποίηση αν δεν υπάρχει "custom_tasks"
-                        if "custom_tasks" not in st.session_state:
-                            st.session_state["custom_tasks"] = {}
-
-                        # Αρχικοποίηση λίστας εργασιών για τον μήνα
-                        if selected_month not in st.session_state["custom_tasks"]:
-                            st.session_state["custom_tasks"][selected_month] = []
-
-                        # Προσθήκη νέας εργασίας
-                        st.session_state["custom_tasks"][selected_month].append({
+                        save_custom_task(selected_month, {
                             "date": new_task_date,
                             "text": new_task_text
                         })
-                        save_current_state()
                         st.session_state.adding_task = False
                         st.rerun()
 
