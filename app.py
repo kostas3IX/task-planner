@@ -1,6 +1,10 @@
 import streamlit as st
 import sqlite3
-from reportlab.pdfgen import canvas  # Make sure reportlab is installed (`pip install reportlab`)
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import os
 
 # 📌 Ρύθμιση Streamlit UI (πρώτη εντολή Streamlit)
 st.set_page_config(
@@ -9,7 +13,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 📌 Custom CSS για μοντέρνο και λιτό UI
+# 📌 Custom CSS για μοντέρνο και λιτό UI με μικρότερες αποστάσεις
 st.markdown("""
 <style>
     .stApp {
@@ -40,8 +44,8 @@ st.markdown("""
     .task-container {
         background-color: #ffffff;
         border-radius: 8px;
-        padding: 15px;
-        margin: 10px 0;
+        padding: 10px;
+        margin: 5px 0; /* Μειωμένο margin για μικρότερη απόσταση */
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         transition: transform 0.2s;
     }
@@ -51,17 +55,17 @@ st.markdown("""
     .task-title {
         color: #2c3e50;
         font-weight: 600;
-        font-size: 1.1em;
+        font-size: 1.0em; /* Μικρότερο μέγεθος γραμματοσειράς */
     }
     .task-date {
         color: #7f8c8d;
-        font-size: 0.9em;
+        font-size: 0.8em; /* Μικρότερο μέγεθος για ημερομηνία */
     }
     .task-status {
-        font-size: 1.2em;
+        font-size: 1.0em;
     }
     .progress-container {
-        margin: 20px 0;
+        margin: 15px 0;
         text-align: center;
     }
     .stProgress > div > div {
@@ -71,12 +75,19 @@ st.markdown("""
         background-color: #3498db;
         color: white;
         border-radius: 8px;
-        padding: 10px 20px;
+        padding: 5px 10px;
         border: none;
         transition: background-color 0.2s;
+        font-size: 0.9em;
     }
     .stButton > button:hover {
         background-color: #2980b9;
+    }
+    .edit-button {
+        background-color: #f39c12;
+    }
+    .edit-button:hover {
+        background-color: #e67e22;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -85,7 +96,7 @@ st.markdown("""
 conn = sqlite3.connect("tasks.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# 📌 Δημιουργία πίνακα (χωρίς διαγραφή υπάρχοντος για να αποφευχθεί απώλεια δεδομένων)
+# 📌 Δημιουργία πίνακα
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -243,11 +254,20 @@ def get_tasks_from_db(user_name, month):
                    (user_name, month))
     return cursor.fetchall()
 
+# 📌 Ενημέρωση εργασίας στη βάση δεδομένων
+def update_task(task_id, date, title, task):
+    cursor.execute("UPDATE tasks SET date = ?, title = ?, task = ? WHERE id = ?",
+                   (date, title, task, task_id))
+    conn.commit()
+
 # 📌 Αρχικοποίηση session state
 if "user_name" not in st.session_state:
     st.session_state.user_name = "Κώστας"
     if add_predefined_tasks(st.session_state.user_name):
         st.info("Προσθήκη προκαθορισμένων εργασιών...")
+
+if "edit_task_id" not in st.session_state:
+    st.session_state.edit_task_id = None
 
 # 📌 Κεφαλίδα
 st.markdown('<div class="title">📋 Προγραμματισμός Ενεργειών</div>', unsafe_allow_html=True)
@@ -270,8 +290,11 @@ progress_percentage = (completed_tasks / total_tasks) * 100 if total_tasks > 0 e
 
 # 📌 Εμφάνιση προόδου
 st.markdown(f'<div class="progress-container"><strong>Πρόοδος {selected_month}</strong></div>', unsafe_allow_html=True)
-st.progress(progress_percentage / 100.0)
-st.markdown(f'<div class="progress-container">{completed_tasks}/{total_tasks} εργασίες ({progress_percentage:.0f}%)</div>', unsafe_allow_html=True)
+if total_tasks > 0:
+    st.progress(progress_percentage / 100.0)
+    st.markdown(f'<div class="progress-container">{completed_tasks}/{total_tasks} εργασίες ({progress_percentage:.0f}%)</div>', unsafe_allow_html=True)
+else:
+    st.markdown('<div class="progress-container">Καμία εργασία για εμφάνιση</div>', unsafe_allow_html=True)
 
 # 📌 Εμφάνιση εργασιών
 st.markdown(f"### 📌 Εργασίες {selected_month}")
@@ -282,10 +305,14 @@ else:
         task_key = f"task_{task_id}_{selected_month}"
         with st.container():
             st.markdown('<div class="task-container">', unsafe_allow_html=True)
-            col1, col2, col3 = st.columns([0.5, 6, 0.5])
+            col1, col2, col3, col4 = st.columns([0.5, 5, 0.5, 0.5])
             with col1:
                 is_completed = completed == 1
-                st.checkbox("", key=task_key, value=is_completed, on_change=lambda tid=task_id, state=is_completed: cursor.execute("UPDATE tasks SET completed = ? WHERE id = ?", (0 if state else 1, tid)) or conn.commit() or st.rerun())
+                st.checkbox("", key=task_key, value=is_completed, on_change=lambda tid=task_id, state=is_completed: (
+                    cursor.execute("UPDATE tasks SET completed = ? WHERE id = ?", (0 if state else 1, tid)),
+                    conn.commit(),
+                    st.rerun()
+                ))
             with col2:
                 tag_color = "🟢" if completed else "🔴"
                 display_date = date if date else "Χωρίς Ημ."
@@ -298,15 +325,55 @@ else:
                     cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
                     conn.commit()
                     st.rerun()
+            with col4:
+                if st.button("✏️", key=f"edit_{task_key}", help="Επεξεργασία εργασίας"):
+                    st.session_state.edit_task_id = task_id
             st.markdown('</div>', unsafe_allow_html=True)
 
-# 📌 Εκτύπωση σε PDF
+# 📌 Φόρμα επεξεργασίας εργασίας
+if st.session_state.edit_task_id is not None:
+    task_id = st.session_state.edit_task_id
+    cursor.execute("SELECT date, title, task FROM tasks WHERE id = ?", (task_id,))
+    task_data = cursor.fetchone()
+    if task_data:
+        st.markdown("### ✏️ Επεξεργασία Εργασίας")
+        with st.form(f"edit_task_form_{task_id}", clear_on_submit=True):
+            edit_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9):", value=task_data[0] or "", key=f"edit_date_{task_id}")
+            edit_title = st.text_input("📌 Τίτλος Εργασίας:", value=task_data[1], key=f"edit_title_{task_id}")
+            edit_task = st.text_area("📝 Περιγραφή Εργασίας:", value=task_data[2], key=f"edit_task_{task_id}")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button("✅ Αποθήκευση"):
+                    update_task(task_id, edit_date, edit_title, edit_task)
+                    st.session_state.edit_task_id = None
+                    st.success("Η εργασία ενημερώθηκε επιτυχώς!")
+                    st.rerun()
+            with col2:
+                if st.form_submit_button("❌ Ακύρωση"):
+                    st.session_state.edit_task_id = None
+                    st.rerun()
+
+# 📌 Εκτύπωση σε PDF με υποστήριξη ελληνικών χαρακτήρων
 def save_pdf(user_name):
     pdf_filename = f"{user_name}_all_tasks.pdf"
-    c = canvas.Canvas(pdf_filename)
-    c.setFont("Helvetica", 12)
+    c = canvas.Canvas(pdf_filename, pagesize=A4)
+
+    # Εγγραφή γραμματοσειράς DejaVuSans για ελληνικούς χαρακτήρες
+    font_path = "/tmp/DejaVuSans.ttf"
+    if not os.path.exists(font_path):
+        import urllib.request
+        url = "https://github.com/dejavu-fonts/dejavu-fonts/releases/download/version-2.37/dejavu-fonts-ttf-2.37.tar.bz2"
+        urllib.request.urlretrieve(url, "/tmp/dejavu-fonts.tar.bz2")
+        import tarfile
+        with tarfile.open("/tmp/dejavu-fonts.tar.bz2", "r:bz2") as tar:
+            tar.extract("dejavu-fonts-ttf-2.37/ttf/DejaVuSans.ttf", path="/tmp")
+        os.rename("/tmp/dejavu-fonts-ttf-2.37/ttf/DejaVuSans.ttf", font_path)
+
+    pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
+    c.setFont("DejaVuSans", 12)
     c.drawString(100, 800, f"Προγραμματισμός Ενεργειών για {user_name}")
-    c.setFont("Helvetica", 10)
+    c.setFont("DejaVuSans", 10)
+
     cursor.execute("SELECT month, date, title, task, completed FROM tasks WHERE user_name = ? ORDER BY CASE month WHEN 'Σεπτέμβριος' THEN 1 WHEN 'Οκτώβριος' THEN 2 WHEN 'Νοέμβριος' THEN 3 WHEN 'Δεκέμβριος' THEN 4 WHEN 'Ιανουάριος' THEN 5 WHEN 'Φεβρουάριος' THEN 6 WHEN 'Μάρτιος' THEN 7 WHEN 'Απρίλιος' THEN 8 WHEN 'Μάιος' THEN 9 WHEN 'Ιούνιος' THEN 10 WHEN 'Ιούλιος' THEN 11 WHEN 'Αύγουστος' THEN 12 END, date", (user_name,))
     all_user_tasks_ordered = cursor.fetchall()
     y = 780
@@ -317,10 +384,11 @@ def save_pdf(user_name):
             y -= 30
             if y < 50:
                 c.showPage()
+                c.setFont("DejaVuSans", 10)
                 y = 800
-            c.setFont("Helvetica-Bold", 12)
+            c.setFont("DejaVuSans", 12)
             c.drawString(100, y, month_pdf)
-            c.setFont("Helvetica", 10)
+            c.setFont("DejaVuSans", 10)
             y -= 15
         date_str_pdf = date_pdf if date_pdf else "Χωρίς Ημ."
         completed_status_pdf = "✓" if completed_pdf else "✗"
@@ -330,7 +398,7 @@ def save_pdf(user_name):
         current_line = ""
         words = task_line.split(' ')
         for word in words:
-            if current_line and c.stringWidth(current_line + " " + word) > max_width:
+            if current_line and c.stringWidth(current_line + " " + word, "DejaVuSans", 10) > max_width:
                 lines.append(current_line)
                 current_line = word
             else:
@@ -341,7 +409,7 @@ def save_pdf(user_name):
             y -= 15
             if y < 50:
                 c.showPage()
-                c.setFont("Helvetica", 10)
+                c.setFont("DejaVuSans", 10)
                 y = 800
             c.drawString(110, y, line)
     c.save()
