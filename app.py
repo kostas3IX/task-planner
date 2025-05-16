@@ -4,13 +4,19 @@ import pandas as pd
 from reportlab.pdfgen import canvas # Make sure reportlab is installed (`pip install reportlab`)
 
 # 📌 Σύνδεση με βάση δεδομένων SQLite
+# Χρησιμοποιούμε ένα μονοπάτι που είναι πιο πιθανό να λειτουργήσει σε περιβάλλοντα cloud όπως το Render
+# ή μπορείτε να παραμείνετε στο απλό 'tasks.db' αν το Render χειρίζεται σωστά τα αρχεία.
+# Για μεγαλύτερη συμβατότητα, ας παραμείνουμε στο απλό όνομα, καθώς το πρόβλημα φαίνεται αλλού.
 conn = sqlite3.connect("tasks.db")
 cursor = conn.cursor()
 
 # 📌 Δημιουργία πίνακα αν δεν υπάρχει
+# Διόρθωση: Αφαιρέθηκε το AUTOINCREMENT. Σε SQLite, ένα INTEGER PRIMARY KEY αυτόματα αυξάνεται (autoincrements)
+# χωρίς την ανάγκη της λέξης-κλειδιού AUTOINCREMENT, η οποία είναι πιο αυστηρή και μπορεί
+# να προκαλέσει προβλήματα σε ορισμένες υλοποιήσεις ή εκδόσεις του SQLite.
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY,
     user_name TEXT,
     month TEXT,
     date TEXT,
@@ -171,8 +177,10 @@ def add_predefined_tasks(user_name):
 
 # 📌 Ανάκτηση εργασιών από τη βάση δεδομένων
 def get_tasks_from_db(user_name, month):
+    # Ordering by date might put entries like "έως 10/9" and "1/9" out of strict numerical order.
+    # A more complex ordering might be needed for perfect chronological sort, but this is often sufficient.
     cursor.execute("SELECT id, date, title, task, completed FROM tasks WHERE user_name = ? AND month = ? ORDER BY date",
-                   (user_name, month)) # Added ORDER BY date for better readability
+                   (user_name, month))
     return cursor.fetchall()
 
 # 📌 Αρχικοποίηση της εφαρμογής και session state
@@ -230,17 +238,27 @@ else:
             # The checkbox value needs to reflect the current state from the DB
             is_completed = completed == 1
             # Use on_change to trigger DB update and rerun immediately
-            st.checkbox("", key=task_key, value=is_completed, on_change=lambda tid=task_id, current_state=is_completed: cursor.execute("UPDATE tasks SET completed = ?", (0 if current_state else 1, tid)) or conn.commit() or st.rerun())
+            # The lambda function captures task_id and current_state correctly
+            st.checkbox("", key=task_key, value=is_completed,
+                        on_change=lambda tid=task_id, current_state=is_completed: (
+                            cursor.execute("UPDATE tasks SET completed = ?", (0 if current_state else 1, tid)),
+                            conn.commit(),
+                            st.rerun() # Trigger rerun after update
+                        )
+                       )
 
 
         with col2:
             tag_color = "🟢" if completed else "🔴"
             # Display date, title, and tag
             display_date = date if date else "Χωρίς Ημ."
-            display_title = f"**{display_date} | {title}**"
-            st.markdown(f"{display_title} {tag_color}")
-            # Display the full task description below the title if it's different or if title is derived
-            if title != task or (not new_task_title and len(new_task_text) > 50): # Show full task if title is a summary
+            # Use title for the main display line, and task for details if they differ
+            display_title_line = f"**{display_date} | {title}**"
+            st.markdown(f"{display_title_line} {tag_color}")
+            # Display the full task description if it's significantly different from the title
+            # or if the title was just a summary.
+            # A simple heuristic: if task is much longer than title, show task.
+            if len(task) > len(title) + 10 or title == task: # Adjust threshold as needed
                  st.write(task)
 
 
@@ -252,42 +270,66 @@ else:
                 st.rerun() # Rerun to update the task list
 
 
-# 📌 Κουμπί για εμφάνιση της φόρμας προσθήκης νέας εργασίας
+# 📌 Κουμπί για εμφάνιση/απόκρυψη της φόρμας προσθήκης νέας εργασίας
 if st.button("✨ Προσθήκη Νέας Εργασίας"):
-    st.session_state.show_new_task_form = True
+    # Toggle the state
+    st.session_state.show_new_task_form = not st.session_state.show_new_task_form
+    # If showing the form, clear previous inputs
+    if st.session_state.show_new_task_form:
+         st.session_state.new_task_date_input = ""
+         st.session_state.new_task_title_input = ""
+         st.session_state.new_task_text_area = ""
+    st.rerun() # Rerun to show/hide the form immediately
+
 
 # 📌 Φόρμα προσθήκης νέας εργασίας (εμφανίζεται μόνο αν show_new_task_form είναι True)
 if st.session_state.show_new_task_form:
     st.markdown("### 📝 Στοιχεία Νέας Εργασίας")
-    with st.form("new_task_form", clear_on_submit=False): # Keep fields filled until explicitly cleared
-        # Set default date to selected month (optional, can be empty)
-        default_date_prefix = "" # f"{selected_month[:3]} " # e.g., "Σεπ "
-        new_task_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9) - Προαιρετικό:", value=default_date_prefix, key='new_task_date_input')
-        new_task_title = st.text_input("📌 Τίτλος Εργασίας (Χρησιμοποιείται στην περίληψη της λίστας):", key='new_task_title_input')
-        new_task_text = st.text_area("📝 Περιγραφή Εργασίας (Πλήρες κείμενο):", key='new_task_text_area')
-        submitted = st.form_submit_button("✅ Αποθήκευση Εργασίας")
-        cancel_button = st.form_submit_button("❌ Ακύρωση")
+    # Use st.container() or just place elements directly if not using st.form for collapse
+    # Since we used st.form, the collapse logic is tied to the state variable and the button click.
+    with st.form("new_task_form", clear_on_submit=False): # Set clear_on_submit=False to keep values if validation fails
+        # Use session state for form inputs to keep values after rerun if needed
+        # Initialize them outside the form or set default values
+        new_task_date = st.text_input("📅 Ημερομηνία (π.χ. 15/9, έως 20/9, 1-5/9) - Προαιρετικό:",
+                                      value=st.session_state.get('new_task_date_input', ''),
+                                      key='new_task_date_input_form') # Use a different key than the toggle button input
+        new_task_title = st.text_input("📌 Τίτλος Εργασίας (Χρησιμοποιείται στην περίληψη της λίστας):",
+                                       value=st.session_state.get('new_task_title_input', ''),
+                                       key='new_task_title_input_form')
+        new_task_text = st.text_area("📝 Περιγραφή Εργασίας (Πλήρες κείμενο):",
+                                     value=st.session_state.get('new_task_text_area', ''),
+                                     key='new_task_text_area_form')
 
-        if submitted and new_task_text:
-            # Use the task text as title if title is empty or short summary
-            title_to_insert = new_task_title if new_task_title else (new_task_text[:50] + "...") if len(new_task_text) > 50 else new_task_text
-            cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed) VALUES (?, ?, ?, ?, ?, ?)",
-                           (st.session_state.user_name, selected_month, new_task_date, title_to_insert, new_task_text, 0))
-            conn.commit()
-            st.success("Η εργασία προστέθηκε επιτυχώς!")
-            # Reset form fields and hide the form
-            st.session_state.show_new_task_form = False
-            st.session_state.new_task_date_input = ""
-            st.session_state.new_task_title_input = ""
-            st.session_state.new_task_text_area = ""
-            st.rerun() # 🔄 Ανανεώνει την εφαρμογή
+        col_submit, col_cancel = st.columns(2)
+        with col_submit:
+            submitted = st.form_submit_button("✅ Αποθήκευση Εργασίας")
+        with col_cancel:
+            cancel_button = st.form_submit_button("❌ Ακύρωση")
+
+        if submitted:
+            if new_task_text: # Ensure task description is not empty
+                # Use the task text as title if title is empty or short summary
+                title_to_insert = new_task_title if new_task_title else (new_task_text[:50] + "...") if len(new_task_text) > 50 else new_task_text
+                cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed) VALUES (?, ?, ?, ?, ?, ?)",
+                               (st.session_state.user_name, selected_month, new_task_date, title_to_insert, new_task_text, 0))
+                conn.commit()
+                st.success("Η εργασία προστέθηκε επιτυχώς!")
+                # Reset form fields and hide the form
+                st.session_state.show_new_task_form = False
+                st.session_state.new_task_date_input_form = "" # Clear the form keys
+                st.session_state.new_task_title_input_form = ""
+                st.session_state.new_task_text_area_form = ""
+                st.rerun() # 🔄 Ανανεώνει την εφαρμογή
+            else:
+                st.warning("Παρακαλώ συμπληρώστε την Περιγραφή Εργασίας.")
+
 
         if cancel_button:
              # Hide the form and clear fields without saving
             st.session_state.show_new_task_form = False
-            st.session_state.new_task_date_input = ""
-            st.session_state.new_task_title_input = ""
-            st.session_state.new_task_text_area = ""
+            st.session_state.new_task_date_input_form = "" # Clear the form keys
+            st.session_state.new_task_title_input_form = ""
+            st.session_state.new_task_text_area_form = ""
             st.rerun()
 
 
@@ -324,6 +366,7 @@ def save_pdf(user_name):
             if y < 50: # New page if needed
                  c.showPage()
                  y = 800
+                 c.setFont("Helvetica", 10) # Reset font after page break
             c.setFont("Helvetica-Bold", 12)
             c.drawString(100, y, month_pdf)
             c.setFont("Helvetica", 10)
