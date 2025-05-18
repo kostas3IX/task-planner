@@ -362,15 +362,15 @@ def get_tasks_from_db(user_name, month_val):
                    (user_name, month_val))
     return cursor.fetchall()
 
-def update_task(task_id, date_val, title_val, month_name):
+def update_task(task_id, date_val, title_val, task_val, month_name):
     current_year = datetime.now().year
     if month_map[month_name] < 9 and datetime.now().month >= 9:
         current_year += 1
     elif month_map[month_name] >= 9 and datetime.now().month < 9:
         current_year -= 1
     sort_date = parse_date_for_sort(date_val, month_name, current_year)
-    cursor.execute("UPDATE tasks SET date = ?, title = ?, sort_date = ? WHERE id = ?",
-                   (date_val, title_val, sort_date, task_id))
+    cursor.execute("UPDATE tasks SET date = ?, title = ?, task = ?, sort_date = ? WHERE id = ?",
+                   (date_val, title_val, task_val, sort_date, task_id))
     conn.commit()
 
 def add_task(user_name, month_val, date_val, title_val):
@@ -649,6 +649,7 @@ else:
                 if st.button("🗑️", key=f"delete_{task_key_prefix}_display", help="Διαγραφή Εργασίας"):
                     cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
                     conn.commit()
+                    st.rerun()
             with cols_display[3]:
                 if st.button("✏️", key=f"edit_{task_key_prefix}_display", help="Επεξεργασία Εργασίας"):
                     st.session_state.edit_task_id = task_id
@@ -656,22 +657,25 @@ else:
 
 if st.session_state.edit_task_id is not None:
     active_task_id = st.session_state.edit_task_id
-    cursor.execute("SELECT date, title FROM tasks WHERE id = ?", (active_task_id,))
+    cursor.execute("SELECT date, title, task FROM tasks WHERE id = ?", (active_task_id,))
     task_data_to_edit = cursor.fetchone()
     if task_data_to_edit:
         st.markdown("### ✏️ Επεξεργασία Εργασίας")
         with st.form(f"edit_task_form_{active_task_id}_main", clear_on_submit=True):
             edit_date_val_form = st.text_input("Ημερομηνία (π.χ. 15/9, έως 20/9):", value=task_data_to_edit[0] or "")
             edit_title_val_form = st.text_input("Τίτλος Εργασίας:", value=task_data_to_edit[1])
+            edit_task_val_form = st.text_input("Περιγραφή Εργασίας:", value=task_data_to_edit[2])
             form_cols_edit = st.columns(2)
             with form_cols_edit[0]:
                 if st.form_submit_button("Αποθήκευση"):
-                    update_task(active_task_id, edit_date_val_form, edit_title_val_form, selected_month)
+                    update_task(active_task_id, edit_date_val_form, edit_title_val_form, edit_task_val_form, selected_month)
                     st.session_state.edit_task_id = None
                     st.success("Η εργασία ενημερώθηκε επιτυχώς!")
+                    st.rerun()
             with form_cols_edit[1]:
                 if st.form_submit_button("Ακύρωση"):
                     st.session_state.edit_task_id = None
+                    st.rerun()
     else:
         st.session_state.edit_task_id = None
 
