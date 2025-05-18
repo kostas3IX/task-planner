@@ -1,11 +1,14 @@
 import streamlit as st
 import sqlite3
-import os
 from datetime import datetime, timedelta
 import icalendar
 from io import BytesIO
 import uuid
-import streamlit.components.v1 as components
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 # 📌 Ρύθμιση Streamlit UI
 st.set_page_config(
@@ -14,7 +17,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 📌 Custom CSS με μειωμένη απόσταση εργασιών και βελτιστοποιημένη εκτύπωση
+# 📌 Custom CSS με μειωμένη απόσταση εργασιών
 st.markdown("""
 <style>
     .stApp {
@@ -124,40 +127,6 @@ st.markdown("""
     }
     .print-button:hover {
         background-color: #138496;
-    }
-    /* Βελτιστοποιημένο CSS για εκτύπωση */
-    @media print {
-        .stButton, .stTextInput, .stSelectbox, .month-select, .stForm, .progress-container, .stCheckbox {
-            display: none !important;
-        }
-        .task-container {
-            box-shadow: none;
-            margin: 5px 0;
-            padding: 10px;
-            border: 1px solid #ccc;
-            page-break-inside: avoid;
-        }
-        .task-title, .task-date, .task-status {
-            font-size: 12pt !important;
-            color: #000 !important;
-        }
-        .task-urgent {
-            border-left: 4px solid #e74c3c;
-        }
-        .stApp {
-            background-color: white;
-        }
-        .title, .subtitle, .clock {
-            display: block !important;
-            text-align: center;
-            color: #000 !important;
-        }
-        .stMarkdown, .stContainer {
-            color: #000 !important;
-        }
-        .task-section {
-            display: block !important;
-        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -491,6 +460,76 @@ def export_to_ics(user_name):
     buffer.seek(0)
     return buffer, "tasks.ics"
 
+def generate_pdf(user_name, selected_month):
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    margin = 20 * mm
+    y_position = height - margin
+
+    # Register DejaVu Sans font
+    try:
+        pdfmetrics.registerFont(TTFont('DejaVuSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
+        font_name = 'DejaVuSans'
+    except:
+        # Fallback to Helvetica if DejaVuSans is not available
+        font_name = 'Helvetica'
+
+    c.setFont(font_name, 16)
+    c.drawCentredString(width / 2, y_position, "Προγραμματισμός Ενεργειών")
+    y_position -= 15 * mm
+
+    c.setFont(font_name, 12)
+    c.drawCentredString(width / 2, y_position, f"Γεια σου, Κώστα! Εργασίες {selected_month}")
+    y_position -= 10 * mm
+
+    c.setFont(font_name, 10)
+    c.drawCentredString(width / 2, y_position, current_time)
+    y_position -= 15 * mm
+
+    c.setFont(font_name, 12)
+    c.drawString(margin, y_position, f"Εργασίες {selected_month}")
+    y_position -= 10 * mm
+
+    tasks = get_tasks_from_db(user_name, selected_month)
+    for task_id, date_val, title_val, task_desc, completed_status in tasks:
+        if y_position < margin:
+            c.showPage()
+            y_position = height - margin
+            c.setFont(font_name, 12)
+        
+        status = "Ολοκληρωμένο" if completed_status else "Εκκρεμές"
+        date_display = date_val if date_val else "Χωρίς Ημ/νία"
+        is_urgent = is_task_urgent(date_val, selected_month)
+        task_text = f"{date_display}: {title_val} ({status})"
+        if is_urgent:
+            task_text += " ⚠️ Επείγουσα"
+        
+        # Wrap text to fit within page width
+        lines = []
+        current_line = ""
+        for word in task_text.split():
+            if c.stringWidth(current_line + word, font_name, 12) < (width - 2 * margin):
+                current_line += word + " "
+            else:
+                lines.append(current_line.strip())
+                current_line = word + " "
+        if current_line:
+            lines.append(current_line.strip())
+        
+        for line in lines:
+            if y_position < margin:
+                c.showPage()
+                y_position = height - margin
+                c.setFont(font_name, 12)
+            c.drawString(margin, y_position, line)
+            y_position -= 7 * mm
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return buffer
+
 # 📌 Αρχικοποίηση session state
 if "user_name" not in st.session_state:
     st.session_state.user_name = "Κώστας"
@@ -499,9 +538,6 @@ if "user_name" not in st.session_state:
 
 if "edit_task_id" not in st.session_state:
     st.session_state.edit_task_id = None
-
-if "print_trigger" not in st.session_state:
-    st.session_state.print_trigger = False
 
 # 📌 Κεφαλίδα
 st.markdown('<div class="title">📋 Προγραμματισμός Ενεργειών</div>', unsafe_allow_html=True)
@@ -563,19 +599,17 @@ if tasks:
             use_container_width=True
         )
     with col_print:
-        if st.button("Εκτύπωση", key="print_button", help="Ανοίγει το παράθυρο εκτύπωσης", use_container_width=True):
-            st.session_state.print_trigger = not st.session_state.print_trigger
-            components.html(
-                """
-                <script>
-                    window.print();
-                </script>
-                """,
-                height=0,
-                width=0
-            )
+        pdf_data = generate_pdf(st.session_state.user_name, selected_month)
+        st.download_button(
+            label="Εκτύπωση σε PDF",
+            data=pdf_data,
+            file_name=f"tasks_{selected_month}.pdf",
+            mime="application/pdf",
+            help="Δημιουργεί και κατεβάζει ένα PDF με τις εργασίες του μήνα",
+            use_container_width=True
+        )
 
-# 📌 Ενότητα εργασιών με σαφή ταξινόμηση για εκτύπωση
+# 📌 Ενότητα εργασιών
 st.markdown(f'<div class="task-section"><h3>📌 Εργασίες {selected_month}</h3></div>', unsafe_allow_html=True)
 if not tasks:
     st.markdown(f'<div class="task-section">Δεν υπάρχουν εργασίες για τον μήνα {selected_month}.</div>', unsafe_allow_html=True)
