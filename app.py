@@ -14,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 📌 Custom CSS με μειωμένη απόσταση εργασιών και βελτιστοποίηση εκτύπωσης
+# 📌 Custom CSS με μειωμένη απόσταση εργασιών και βελτιστοποιημένη εκτύπωση
 st.markdown("""
 <style>
     .stApp {
@@ -125,19 +125,21 @@ st.markdown("""
     .print-button:hover {
         background-color: #138496;
     }
-    /* Βελτιστοποίηση για εκτύπωση */
+    /* Βελτιστοποιημένο CSS για εκτύπωση */
     @media print {
-        .stButton, .stTextInput, .stSelectbox, .month-select, .stForm, .progress-container {
+        .stButton, .stTextInput, .stSelectbox, .month-select, .stForm, .progress-container, .stCheckbox {
             display: none !important;
         }
         .task-container {
             box-shadow: none;
             margin: 5px 0;
-            padding: 5px;
+            padding: 10px;
             border: 1px solid #ccc;
+            page-break-inside: avoid;
         }
         .task-title, .task-date, .task-status {
             font-size: 12pt !important;
+            color: #000 !important;
         }
         .task-urgent {
             border-left: 4px solid #e74c3c;
@@ -148,6 +150,14 @@ st.markdown("""
         .title, .subtitle, .clock {
             display: block !important;
             text-align: center;
+            color: #000 !important;
+        }
+        .stMarkdown, .stContainer {
+            color: #000 !important;
+        }
+        /* Εξασφάλιση ότι τα tasks εμφανίζονται */
+        .task-section {
+            display: block !important;
         }
     }
 </style>
@@ -491,6 +501,9 @@ if "user_name" not in st.session_state:
 if "edit_task_id" not in st.session_state:
     st.session_state.edit_task_id = None
 
+if "print_trigger" not in st.session_state:
+    st.session_state.print_trigger = 0
+
 # 📌 Κεφαλίδα
 st.markdown('<div class="title">📋 Προγραμματισμός Ενεργειών</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Γεια σου, Κώστα! Παρακολούθησε τις μηνιαίες σου εργασίες.</div>', unsafe_allow_html=True)
@@ -552,6 +565,7 @@ if tasks:
         )
     with col_print:
         if st.button("Εκτύπωση", key="print_button", help="Ανοίγει το παράθυρο εκτύπωσης", use_container_width=True):
+            st.session_state.print_trigger += 1
             components.html(
                 """
                 <script>
@@ -560,13 +574,15 @@ if tasks:
                 """,
                 height=0,
                 width=0,
+                key=f"print_component_{st.session_state.print_trigger}"
             )
 
 st.markdown("---")
 
-st.markdown(f"### 📌 Εργασίες {selected_month}")
+# 📌 Ενότητα εργασιών με σαφή ταξινόμηση για εκτύπωση
+st.markdown(f'<div class="task-section"><h3>📌 Εργασίες {selected_month}</h3></div>', unsafe_allow_html=True)
 if not tasks:
-    st.info(f"Δεν υπάρχουν εργασίες για τον μήνα {selected_month}.")
+    st.markdown(f'<div class="task-section">Δεν υπάρχουν εργασίες για τον μήνα {selected_month}.</div>', unsafe_allow_html=True)
 else:
     for task_id, date_val, title_val, task_desc, completed_status in tasks:
         task_key_prefix = f"task_{task_id}_{selected_month.replace(' ', '_')}"
