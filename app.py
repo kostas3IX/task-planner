@@ -155,7 +155,6 @@ st.markdown("""
         .stMarkdown, .stContainer {
             color: #000 !important;
         }
-        /* Εξασφάλιση ότι τα tasks εμφανίζονται */
         .task-section {
             display: block !important;
         }
@@ -378,7 +377,7 @@ def add_predefined_tasks(user_name):
             for date_val, task_desc in tasks_list:
                 title = task_desc
                 sort_date = parse_date_for_sort(date_val, month_val, month_year)
-                cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed, sort_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed, sort_date) VALUES (?,?, ?, ?, ?, ?, ?)",
                                (user_name, month_val, date_val, title, task_desc, 0, sort_date))
         conn.commit()
         return True
@@ -502,7 +501,7 @@ if "edit_task_id" not in st.session_state:
     st.session_state.edit_task_id = None
 
 if "print_trigger" not in st.session_state:
-    st.session_state.print_trigger = 0
+    st.session_state.print_trigger = False
 
 # 📌 Κεφαλίδα
 st.markdown('<div class="title">📋 Προγραμματισμός Ενεργειών</div>', unsafe_allow_html=True)
@@ -565,7 +564,7 @@ if tasks:
         )
     with col_print:
         if st.button("Εκτύπωση", key="print_button", help="Ανοίγει το παράθυρο εκτύπωσης", use_container_width=True):
-            st.session_state.print_trigger += 1
+            st.session_state.print_trigger = not st.session_state.print_trigger
             components.html(
                 """
                 <script>
@@ -573,11 +572,8 @@ if tasks:
                 </script>
                 """,
                 height=0,
-                width=0,
-                key=f"print_component_{st.session_state.print_trigger}"
+                width=0
             )
-
-st.markdown("---")
 
 # 📌 Ενότητα εργασιών με σαφή ταξινόμηση για εκτύπωση
 st.markdown(f'<div class="task-section"><h3>📌 Εργασίες {selected_month}</h3></div>', unsafe_allow_html=True)
