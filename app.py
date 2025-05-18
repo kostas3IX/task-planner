@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import icalendar
 from io import BytesIO
 import uuid
+import streamlit.components.v1 as components
 
 # 📌 Ρύθμιση Streamlit UI
 st.set_page_config(
@@ -13,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 📌 Custom CSS με μειωμένη απόσταση εργασιών
+# 📌 Custom CSS με μειωμένη απόσταση εργασιών και βελτιστοποίηση εκτύπωσης
 st.markdown("""
 <style>
     .stApp {
@@ -123,6 +124,31 @@ st.markdown("""
     }
     .print-button:hover {
         background-color: #138496;
+    }
+    /* Βελτιστοποίηση για εκτύπωση */
+    @media print {
+        .stButton, .stTextInput, .stSelectbox, .month-select, .stForm, .progress-container {
+            display: none !important;
+        }
+        .task-container {
+            box-shadow: none;
+            margin: 5px 0;
+            padding: 5px;
+            border: 1px solid #ccc;
+        }
+        .task-title, .task-date, .task-status {
+            font-size: 12pt !important;
+        }
+        .task-urgent {
+            border-left: 4px solid #e74c3c;
+        }
+        .stApp {
+            background-color: white;
+        }
+        .title, .subtitle, .clock {
+            display: block !important;
+            text-align: center;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -525,28 +551,16 @@ if tasks:
             use_container_width=True
         )
     with col_print:
-        st.markdown(
-            """
-            <button class="stButton print-button" onclick="window.print()">Εκτύπωση</button>
-            <style>
-                .print-button {
-                    background-color: #17a2b8;
-                    color: white;
-                    border-radius: 8px;
-                    padding: 5px 10px;
-                    border: none;
-                    transition: background-color 0.2s;
-                    font-size: 0.9em;
-                    width: 100%;
-                    cursor: pointer;
-                }
-                .print-button:hover {
-                    background-color: #138496;
-                }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+        if st.button("Εκτύπωση", key="print_button", help="Ανοίγει το παράθυρο εκτύπωσης", use_container_width=True):
+            components.html(
+                """
+                <script>
+                    window.print();
+                </script>
+                """,
+                height=0,
+                width=0,
+            )
 
 st.markdown("---")
 
