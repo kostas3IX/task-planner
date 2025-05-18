@@ -17,7 +17,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 📌 Custom CSS με μειωμένη απόσταση εργασιών
+# 📌 Custom CSS με μειωμένη απόσταση εργασιών και παχύτερη μπάρα
 st.markdown("""
 <style>
     .stApp {
@@ -78,12 +78,19 @@ st.markdown("""
         background-color: #ffe6e6;
         border-left: 4px solid #e74c3c;
     }
+    .task-today {
+        background-color: #d4edda;
+        border-left: 4px solid #28a745;
+    }
     .progress-container {
         margin: 15px 0;
         text-align: center;
     }
     .stProgress > div > div {
         background-color: #3498db;
+    }
+    .stProgress > div {
+        height: 20px;
     }
     .stButton > button {
         background-color: #3498db;
@@ -128,6 +135,23 @@ st.markdown("""
     .print-button:hover {
         background-color: #138496;
     }
+    .robot-notification {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background-color: #e9f7ef;
+        border: 1px solid #28a745;
+        border-radius: 8px;
+        padding: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        z-index: 1000;
+        max-width: 300px;
+    }
+    .robot-notification p {
+        margin: 0;
+        color: #2c3e50;
+        font-size: 0.9em;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -139,7 +163,7 @@ st.markdown(f'<div class="clock">{current_time}</div>', unsafe_allow_html=True)
 conn = sqlite3.connect("tasks.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# 📌 Δημιουργία πίνακα με πεδίο sort_date
+# 📌 Δημιουργία πίνακα με πεδία sort_date και rating
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,9 +173,16 @@ CREATE TABLE IF NOT EXISTS tasks (
     title TEXT,
     task TEXT,
     completed INTEGER,
-    sort_date DATETIME
+    sort_date DATETIME,
+    rating INTEGER
 )
 """)
+# Προσθήκη πεδίου rating αν δεν υπάρχει
+try:
+    cursor.execute("ALTER TABLE tasks ADD COLUMN rating INTEGER")
+    conn.commit()
+except sqlite3.OperationalError:
+    pass  # Το πεδίο υπάρχει ήδη
 conn.commit()
 
 month_map = {
@@ -346,8 +377,8 @@ def add_predefined_tasks(user_name):
             for date_val, task_desc in tasks_list:
                 title = task_desc
                 sort_date = parse_date_for_sort(date_val, month_val, month_year)
-                cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed, sort_date) VALUES (?,?, ?, ?, ?, ?, ?)",
-                               (user_name, month_val, date_val, title, task_desc, 0, sort_date))
+                cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed, sort_date, rating) VALUES (?,?, ?, ?, ?, ?, ?, ?)",
+                               (user_name, month_val, date_val, title, task_desc, 0, sort_date, None))
         conn.commit()
         return True
     return False
@@ -358,19 +389,23 @@ def reset_tasks(user_name):
     add_predefined_tasks(user_name)
 
 def get_tasks_from_db(user_name, month_val):
-    cursor.execute("SELECT id, date, title, task, completed FROM tasks WHERE user_name = ? AND month = ? ORDER BY sort_date",
+    cursor.execute("SELECT id, date, title, task, completed, rating FROM tasks WHERE user_name = ? AND month = ? ORDER BY sort_date",
                    (user_name, month_val))
     return cursor.fetchall()
 
-def update_task(task_id, date_val, title_val, task_val, month_name):
+def update_task(task_id, date_val, title_val, task_val, month_name, rating_val=None):
     current_year = datetime.now().year
     if month_map[month_name] < 9 and datetime.now().month >= 9:
         current_year += 1
     elif month_map[month_name] >= 9 and datetime.now().month < 9:
         current_year -= 1
     sort_date = parse_date_for_sort(date_val, month_name, current_year)
-    cursor.execute("UPDATE tasks SET date = ?, title = ?, task = ?, sort_date = ? WHERE id = ?",
-                   (date_val, title_val, task_val, sort_date, task_id))
+    cursor.execute("UPDATE tasks SET date = ?, title = ?, task = ?, sort_date = ?, rating = ? WHERE id = ?",
+                   (date_val, title_val, task_val, sort_date, rating_val, task_id))
+    conn.commit()
+
+def update_task_rating(task_id, rating_val):
+    cursor.execute("UPDATE tasks SET rating = ? WHERE id = ?", (rating_val, task_id))
     conn.commit()
 
 def add_task(user_name, month_val, date_val, title_val):
@@ -380,8 +415,8 @@ def add_task(user_name, month_val, date_val, title_val):
     elif month_map[month_val] >= 9 and datetime.now().month < 9:
         current_year -= 1
     sort_date = parse_date_for_sort(date_val, month_val, current_year)
-    cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed, sort_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                   (user_name, month_val, date_val, title_val, title_val, 0, sort_date))
+    cursor.execute("INSERT INTO tasks (user_name, month, date, title, task, completed, sort_date, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                   (user_name, month_val, date_val, title_val, title_val, 0, sort_date, None))
     conn.commit()
 
 def check_all_tasks(user_name, month_val):
@@ -415,7 +450,7 @@ def is_task_urgent(date_str, task_month_name=None):
                 _, end_range_part = date_str.split('-')
                 end_date_part = end_range_part.strip()
         elif "/" in date_str:
-            return False
+            end_date_part = date_str
         else:
             return False
         if not end_date_part:
@@ -432,6 +467,62 @@ def is_task_urgent(date_str, task_month_name=None):
         return False
     except Exception:
         return False
+
+def is_task_for_today(date_str, task_month_name=None):
+    if not date_str:
+        return False
+    try:
+        day_part = ""
+        if "έως" in date_str:
+            day_part = date_str.split("έως")[-1].strip().split('/')[0]
+        elif "-" in date_str and "/" in date_str:
+            day_part = date_str.split("-")[-1].strip().split('/')[0]
+        elif "/" in date_str:
+            day_part = date_str.split('/')[0]
+        else:
+            return False
+        today_day = datetime.now().strftime("%d").lstrip("0")
+        return day_part.lstrip("0") == today_day
+    except:
+        return False
+
+def get_today_tasks_indices(tasks, month_name):
+    today_indices = []
+    for idx, task in enumerate(tasks, 1):
+        date_val = task[1]
+        if is_task_for_today(date_val, month_name):
+            today_indices.append(str(idx))
+    return today_indices
+
+def get_ai_priority_suggestion(tasks, month_name):
+    priorities = []
+    for idx, task in enumerate(tasks, 1):
+        task_id, date_val, title_val, _, completed_status, _ = task
+        if is_task_for_today(date_val, month_name) and not completed_status:
+            urgent = is_task_urgent(date_val, month_name)
+            priority_text = f"Task {idx}: {title_val} ({'Επείγον' if urgent else 'Εκκρεμές'})"
+            priorities.append(priority_text)
+    return priorities
+
+def calculate_performance_percentage(tasks, month_name):
+    if not tasks:
+        return 0.0
+    total_score = 0
+    task_count = len(tasks)
+    for task in tasks:
+        date_val, completed_status, sort_date, rating = task[1], task[4], task[5], task[5]
+        score = 0
+        # +10% αν είναι ολοκληρωμένο
+        if completed_status:
+            score += 10
+        # +5% αν ολοκληρώθηκε εγκαίρως
+        if completed_status and sort_date and sort_date <= datetime.now():
+            score += 5
+        # +1-10% από βαθμολογία
+        if rating is not None:
+            score += rating
+        total_score += min(score, 25)  # Μέγιστο 25% ανά task
+    return (total_score / task_count) * 4  # Μετατροπή σε ποσοστό (max 25 -> 100%)
 
 def export_to_ics(user_name):
     cal = icalendar.Calendar()
@@ -492,7 +583,7 @@ def generate_pdf(user_name, selected_month):
     y_position -= 10 * mm
 
     tasks = get_tasks_from_db(user_name, selected_month)
-    for task_id, date_val, title_val, task_desc, completed_status in tasks:
+    for idx, (task_id, date_val, title_val, task_desc, completed_status, rating) in enumerate(tasks, 1):
         if y_position < margin:
             c.showPage()
             y_position = height - margin
@@ -501,7 +592,8 @@ def generate_pdf(user_name, selected_month):
         status = "Ολοκληρωμένο" if completed_status else "Εκκρεμές"
         date_display = date_val if date_val else "Χωρίς Ημ/νία"
         is_urgent = is_task_urgent(date_val, selected_month)
-        task_text = f"{date_display}: {title_val} ({status})"
+        rating_text = f", Βαθμολογία: {rating}" if rating is not None else ""
+        task_text = f"{idx}. {date_display}: {title_val} ({status}{rating_text})"
         if is_urgent:
             task_text += " ⚠️ Επείγουσα"
         
@@ -564,14 +656,24 @@ with st.form("add_task_form", clear_on_submit=True):
 
 tasks = get_tasks_from_db(st.session_state.user_name, selected_month)
 
+# 📌 Ρομποτάκι ειδοποίησης
+today_indices = get_today_tasks_indices(tasks, selected_month)
+ai_priorities = get_ai_priority_suggestion(tasks, selected_month)
+notification_text = f"🤖 Έλεγξε τα tasks {', '.join(today_indices)}" if today_indices else "🤖 Κανένα task για σήμερα"
+if ai_priorities:
+    notification_text += f"<br>Προτεραιότητες:<br>{'<br>'.join(ai_priorities)}"
+st.markdown(f'<div class="robot-notification"><p>{notification_text}</p></div>', unsafe_allow_html=True)
+
 total_tasks = len(tasks)
 completed_tasks_count = sum(1 for task_item in tasks if task_item[4] == 1)
 progress_percentage = (completed_tasks_count / total_tasks) * 100 if total_tasks > 0 else 0
+performance_percentage = calculate_performance_percentage(tasks, selected_month)
 
 st.markdown(f'<div class="progress-container"><strong>Πρόοδος {month_genitive_map[selected_month]}</strong></div>', unsafe_allow_html=True)
 if total_tasks > 0:
     st.progress(progress_percentage / 100.0)
     st.markdown(f'<div class="progress-container">{completed_tasks_count}/{total_tasks} εργασίες ({progress_percentage:.0f}%)</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="progress-container">Ποσοστό Απόδοσης: {performance_percentage:.0f}%</div>', unsafe_allow_html=True)
 else:
     st.markdown('<div class="progress-container">Καμία εργασία για εμφάνιση</div>', unsafe_allow_html=True)
 
@@ -580,14 +682,17 @@ if tasks:
     with col_check:
         if st.button("Επιλογή Όλων", help="Επιλέγει όλες τις εργασίες του μήνα", use_container_width=True):
             check_all_tasks(st.session_state.user_name, selected_month)
+            st.rerun()
     with col_uncheck:
         if st.button("Αποεπιλογή Όλων", help="Αποεπιλέγει όλες τις εργασίες του μήνα", use_container_width=True):
             uncheck_all_tasks(st.session_state.user_name, selected_month)
+            st.rerun()
     with col_reset:
         if st.button("Αρχικοποίηση", help="Επαναφέρει τις προκαθορισμένες εργασίες", use_container_width=True):
             st.warning("Όλες οι εργασίες θα διαγραφούν και θα επαναφερθούν οι προκαθορισμένες. Συνέχεια;")
             reset_tasks(st.session_state.user_name)
             st.success("Οι εργασίες επαναφέρθηκαν επιτυχώς!")
+            st.rerun()
     with col_export_ics:
         ics_file_data, ics_filename_data = export_to_ics(st.session_state.user_name)
         st.download_button(
@@ -614,16 +719,21 @@ st.markdown(f'<div class="task-section"><h3>📌 Εργασίες {selected_mont
 if not tasks:
     st.markdown(f'<div class="task-section">Δεν υπάρχουν εργασίες για τον μήνα {selected_month}.</div>', unsafe_allow_html=True)
 else:
-    for task_id, date_val, title_val, task_desc, completed_status in tasks:
+    for idx, (task_id, date_val, title_val, task_desc, completed_status, rating) in enumerate(tasks, 1):
         task_key_prefix = f"task_{task_id}_{selected_month.replace(' ', '_')}"
         is_urgent_task = is_task_urgent(date_val, selected_month)
+        is_today_task = is_task_for_today(date_val, selected_month)
         container_class = "task-container"
         if is_urgent_task:
             container_class += " task-urgent"
+        if is_today_task:
+            container_class += " task-today"
         with st.container():
             st.markdown(f'<div class="{container_class}">', unsafe_allow_html=True)
-            cols_display = st.columns([0.5, 5, 0.5, 0.5])
+            cols_display = st.columns([0.3, 0.3, 4, 0.8, 0.5, 0.5])
             with cols_display[0]:
+                st.markdown(f'<span style="font-weight: bold;">{idx}</span>', unsafe_allow_html=True)
+            with cols_display[1]:
                 is_checked_val = completed_status == 1
                 st.checkbox(
                     f"##{task_id}_cb",
@@ -631,12 +741,13 @@ else:
                     key=f"cb_{task_key_prefix}_display",
                     on_change=(lambda tid, current_status_val: (
                         cursor.execute("UPDATE tasks SET completed = ? WHERE id = ?", (0 if current_status_val else 1, tid)),
-                        conn.commit()
+                        conn.commit(),
+                        st.rerun()
                     )),
                     args=(task_id, is_checked_val),
                     label_visibility="collapsed"
                 )
-            with cols_display[1]:
+            with cols_display[2]:
                 status_emoji = "🟢" if completed_status else "🔴"
                 display_date_str = date_val if date_val else "Χωρίς Ημ/νία"
                 st.markdown(f'<span class="task-title">{title_val}</span> <span class="task-status">{status_emoji}</span>', unsafe_allow_html=True)
@@ -645,19 +756,33 @@ else:
                     st.caption(task_desc)
                 if is_urgent_task:
                     st.markdown('<span style="color: #e74c3c; font-size: 0.9em;">⚠️ Επείγουσα προθεσμία!</span>', unsafe_allow_html=True)
-            with cols_display[2]:
+            with cols_display[3]:
+                rating_options = ["-"] + [str(i) for i in range(1, 11)]
+                current_rating = str(rating) if rating is not None else "-"
+                selected_rating = st.selectbox(
+                    "Βαθμολογία",
+                    rating_options,
+                    index=rating_options.index(current_rating),
+                    key=f"rating_{task_key_prefix}_display",
+                    label_visibility="collapsed"
+                )
+                if selected_rating != current_rating:
+                    new_rating = int(selected_rating) if selected_rating != "-" else None
+                    update_task_rating(task_id, new_rating)
+                    st.rerun()
+            with cols_display[4]:
                 if st.button("🗑️", key=f"delete_{task_key_prefix}_display", help="Διαγραφή Εργασίας"):
                     cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
                     conn.commit()
                     st.rerun()
-            with cols_display[3]:
+            with cols_display[5]:
                 if st.button("✏️", key=f"edit_{task_key_prefix}_display", help="Επεξεργασία Εργασίας"):
                     st.session_state.edit_task_id = task_id
             st.markdown('</div>', unsafe_allow_html=True)
 
 if st.session_state.edit_task_id is not None:
     active_task_id = st.session_state.edit_task_id
-    cursor.execute("SELECT date, title, task FROM tasks WHERE id = ?", (active_task_id,))
+    cursor.execute("SELECT date, title, task, rating FROM tasks WHERE id = ?", (active_task_id,))
     task_data_to_edit = cursor.fetchone()
     if task_data_to_edit:
         st.markdown("### ✏️ Επεξεργασία Εργασίας")
@@ -665,10 +790,16 @@ if st.session_state.edit_task_id is not None:
             edit_date_val_form = st.text_input("Ημερομηνία (π.χ. 15/9, έως 20/9):", value=task_data_to_edit[0] or "")
             edit_title_val_form = st.text_input("Τίτλος Εργασίας:", value=task_data_to_edit[1])
             edit_task_val_form = st.text_input("Περιγραφή Εργασίας:", value=task_data_to_edit[2])
+            edit_rating_val_form = st.selectbox(
+                "Βαθμολογία",
+                ["-"] + [str(i) for i in range(1, 11)],
+                index=task_data_to_edit[3] if task_data_to_edit[3] is not None else 0
+            )
             form_cols_edit = st.columns(2)
             with form_cols_edit[0]:
                 if st.form_submit_button("Αποθήκευση"):
-                    update_task(active_task_id, edit_date_val_form, edit_title_val_form, edit_task_val_form, selected_month)
+                    new_rating = int(edit_rating_val_form) if edit_rating_val_form != "-" else None
+                    update_task(active_task_id, edit_date_val_form, edit_title_val_form, edit_task_val_form, selected_month, new_rating)
                     st.session_state.edit_task_id = None
                     st.success("Η εργασία ενημερώθηκε επιτυχώς!")
                     st.rerun()
