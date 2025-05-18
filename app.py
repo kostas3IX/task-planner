@@ -17,7 +17,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 📌 Custom CSS με μειωμένη απόσταση εργασιών
+# 📌 Custom CSS με όλες τις αλλαγές
 st.markdown("""
 <style>
     .stApp {
@@ -78,12 +78,17 @@ st.markdown("""
         background-color: #ffe6e6;
         border-left: 4px solid #e74c3c;
     }
+    .task-today {
+        background-color: #e8f5e9;
+        border-left: 4px solid #2ecc71;
+    }
     .progress-container {
         margin: 15px 0;
         text-align: center;
     }
     .stProgress > div > div {
         background-color: #3498db;
+        height: 10px !important;
     }
     .stButton > button {
         background-color: #3498db;
@@ -128,8 +133,65 @@ st.markdown("""
     .print-button:hover {
         background-color: #138496;
     }
+    .today-reminder {
+        background-color: #e3f2fd;
+        border-radius: 8px;
+        padding: 10px;
+        margin: 10px 0;
+        text-align: center;
+        font-weight: bold;
+    }
+    .task-number {
+        font-weight: bold;
+        margin-right: 8px;
+        color: #2c3e50;
+    }
 </style>
+
+<script>
+function showTodayTasks() {
+    const today = new Date();
+    const todayStr = today.toLocaleDateString('el-GR');
+    const tasks = document.querySelectorAll('.task-container');
+    let todayTasks = [];
+    
+    tasks.forEach(task => {
+        const dateElement = task.querySelector('.task-date');
+        if (dateElement) {
+            const taskDate = dateElement.textContent;
+            if (taskDate.includes(todayStr.substring(0, 5))) { // Compare day/month
+                const titleElement = task.querySelector('.task-title');
+                if (titleElement) {
+                    const taskNumber = task.querySelector('.task-number');
+                    todayTasks.push({
+                        number: taskNumber ? taskNumber.textContent : '?',
+                        title: titleElement.textContent
+                    });
+                }
+            }
+        }
+    });
+    
+    if (todayTasks.length > 0) {
+        const reminderDiv = document.createElement('div');
+        reminderDiv.className = 'today-reminder';
+        reminderDiv.innerHTML = '<h4>📌 Εργασίες για σήμερα:</h4>';
+        
+        todayTasks.forEach(task => {
+            reminderDiv.innerHTML += `<p>${task.number}. ${task.title}</p>`;
+        });
+        
+        const subtitle = document.querySelector('.subtitle');
+        if (subtitle) {
+            subtitle.parentNode.insertBefore(reminderDiv, subtitle.nextSibling);
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', showTodayTasks);
+</script>
 """, unsafe_allow_html=True)
+
 
 # 📌 Εμφάνιση τρέχουσας ημερομηνίας
 current_time = datetime.now().strftime("%H:%M:%S EEST, %A, %d %B %Y")
@@ -609,21 +671,31 @@ if tasks:
             use_container_width=True
         )
 
-# 📌 Ενότητα εργασιών
-st.markdown(f'<div class="task-section"><h3>📌 Εργασίες {selected_month}</h3></div>', unsafe_allow_html=True)
+ 📌 Ενότητα εργασιών
+st.markdown(f'<div class="task-section"><h3>📌 Εργασίες {month_genitive_map[selected_month]}</h3></div>', unsafe_allow_html=True)
 if not tasks:
     st.markdown(f'<div class="task-section">Δεν υπάρχουν εργασίες για τον μήνα {selected_month}.</div>', unsafe_allow_html=True)
 else:
-    for task_id, date_val, title_val, task_desc, completed_status in tasks:
+    today_str = datetime.now().strftime("%d/%m")
+    for idx, (task_id, date_val, title_val, task_desc, completed_status) in enumerate(tasks, 1):
         task_key_prefix = f"task_{task_id}_{selected_month.replace(' ', '_')}"
         is_urgent_task = is_task_urgent(date_val, selected_month)
+        is_today_task = date_val and today_str in date_val
+        
         container_class = "task-container"
         if is_urgent_task:
             container_class += " task-urgent"
+        if is_today_task:
+            container_class += " task-today"
+            
         with st.container():
             st.markdown(f'<div class="{container_class}">', unsafe_allow_html=True)
             cols_display = st.columns([0.5, 5, 0.5, 0.5])
+            
             with cols_display[0]:
+                st.markdown(f'<span class="task-number">{idx}.</span>', unsafe_allow_html=True)
+                
+            with cols_display[1]:
                 is_checked_val = completed_status == 1
                 st.checkbox(
                     f"##{task_id}_cb",
@@ -636,7 +708,8 @@ else:
                     args=(task_id, is_checked_val),
                     label_visibility="collapsed"
                 )
-            with cols_display[1]:
+                
+            with cols_display[2]:
                 status_emoji = "🟢" if completed_status else "🔴"
                 display_date_str = date_val if date_val else "Χωρίς Ημ/νία"
                 st.markdown(f'<span class="task-title">{title_val}</span> <span class="task-status">{status_emoji}</span>', unsafe_allow_html=True)
@@ -645,39 +718,17 @@ else:
                     st.caption(task_desc)
                 if is_urgent_task:
                     st.markdown('<span style="color: #e74c3c; font-size: 0.9em;">⚠️ Επείγουσα προθεσμία!</span>', unsafe_allow_html=True)
-            with cols_display[2]:
+                if is_today_task:
+                    st.markdown('<span style="color: #2ecc71; font-size: 0.9em;">⭐ Σημερινή εργασία!</span>', unsafe_allow_html=True)
+                    
+            with cols_display[3]:
                 if st.button("🗑️", key=f"delete_{task_key_prefix}_display", help="Διαγραφή Εργασίας"):
                     cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
                     conn.commit()
                     st.rerun()
-            with cols_display[3]:
+                    
+            with cols_display[4]:
                 if st.button("✏️", key=f"edit_{task_key_prefix}_display", help="Επεξεργασία Εργασίας"):
                     st.session_state.edit_task_id = task_id
+                    
             st.markdown('</div>', unsafe_allow_html=True)
-
-if st.session_state.edit_task_id is not None:
-    active_task_id = st.session_state.edit_task_id
-    cursor.execute("SELECT date, title, task FROM tasks WHERE id = ?", (active_task_id,))
-    task_data_to_edit = cursor.fetchone()
-    if task_data_to_edit:
-        st.markdown("### ✏️ Επεξεργασία Εργασίας")
-        with st.form(f"edit_task_form_{active_task_id}_main", clear_on_submit=True):
-            edit_date_val_form = st.text_input("Ημερομηνία (π.χ. 15/9, έως 20/9):", value=task_data_to_edit[0] or "")
-            edit_title_val_form = st.text_input("Τίτλος Εργασίας:", value=task_data_to_edit[1])
-            edit_task_val_form = st.text_input("Περιγραφή Εργασίας:", value=task_data_to_edit[2])
-            form_cols_edit = st.columns(2)
-            with form_cols_edit[0]:
-                if st.form_submit_button("Αποθήκευση"):
-                    update_task(active_task_id, edit_date_val_form, edit_title_val_form, edit_task_val_form, selected_month)
-                    st.session_state.edit_task_id = None
-                    st.success("Η εργασία ενημερώθηκε επιτυχώς!")
-                    st.rerun()
-            with form_cols_edit[1]:
-                if st.form_submit_button("Ακύρωση"):
-                    st.session_state.edit_task_id = None
-                    st.rerun()
-    else:
-        st.session_state.edit_task_id = None
-
-st.markdown("---")
-st.markdown("*Σύστημα Παρακολούθησης Εργασιών Διευθυντή*")
